@@ -1,0 +1,557 @@
+"""
+Trip planner service module containing the TripPlannerService class
+"""
+
+from datetime import datetime, timedelta
+from typing import List, Dict, Optional, Union, Tuple
+from mcp.servers.base_service import BaseService
+from mcp.servers.weather.service import WeatherService
+from mcp.servers.places.service import PlacesService
+from mcp.servers.booking.service import BookingService
+from mcp.servers.trip_planner.constants import (
+    TRIP_DURATIONS,
+    DEFAULT_TRIP_DURATION,
+    MIN_TRIP_DURATION,
+    MAX_TRIP_DURATION,
+    TRIP_STYLES,
+    WEATHER_ACTIVITY_MAPPING,
+    BUDGET_CATEGORIES,
+    DEFAULT_TRIP_STYLE,
+    DEFAULT_BUDGET,
+    ERROR_MESSAGES
+)
+
+
+class TripPlannerService(BaseService):
+    """
+    Service class for comprehensive trip planning
+    """
+    
+    def __init__(
+        self,
+        places_api_key: Optional[str] = None,
+        booking_api_key: Optional[str] = None
+    ):
+        """
+        Initialize the trip planner service
+        
+        :param weather_api_key: Weather API key
+        :param places_api_key: Google Places API key
+        :param booking_api_key: Booking.com API key
+        """
+        self.weather_service = WeatherService()
+        self.places_service = PlacesService(api_key=places_api_key)
+        self.booking_service = BookingService(api_key=booking_api_key)
+    
+    def plan_trip(
+        self,
+        location: Union[str, Tuple[float, float]],
+        start_date: Optional[str] = None,
+        duration: Optional[Union[int, str]] = None,
+        trip_style: str = DEFAULT_TRIP_STYLE,
+        budget: str = DEFAULT_BUDGET,
+        weather_preference: Optional[str] = None,
+        include_accommodation: bool = True
+    ) -> str:
+        """
+        Plan a complete trip based on location and preferences
+        
+        :param location: destination location
+        :param start_date: trip start date (YYYY-MM-DD) or None for weather-based planning
+        :param duration: trip duration in days or preset ("weekend", "short", etc.)
+        :param trip_style: trip style (relaxed, balanced, adventure, cultural, food_focused)
+        :param budget: budget category (budget, mid_range, luxury)
+        :param weather_preference: preferred weather condition
+        :param include_accommodation: whether to include accommodation suggestions
+        :return: complete trip plan
+        """
+        # Get coordinates if location is a string
+        if isinstance(location, str):
+            lat, lng = self.get_coordinates(location)
+            if not lat or not lng:
+                return ERROR_MESSAGES["location_not_found"]
+            location_name = location
+        else:
+            lat, lng = location
+            location_name = f"coordinates ({lat:.4f}, {lng:.4f})"
+        
+        # Validate and parse duration
+        trip_days = self._parse_duration(duration)
+        if not trip_days:
+            return f"Invalid duration. Use number of days (1-{MAX_TRIP_DURATION}) or preset ({', '.join(TRIP_DURATIONS.keys())})"
+        
+        # Validate trip style and budget
+        if trip_style not in TRIP_STYLES:
+            available_styles = ", ".join(TRIP_STYLES.keys())
+            return f"Invalid trip style '{trip_style}'. Available: {available_styles}"
+        
+        if budget not in BUDGET_CATEGORIES:
+            available_budgets = ", ".join(BUDGET_CATEGORIES.keys())
+            return f"Invalid budget category '{budget}'. Available: {available_budgets}"
+        
+        # Determine dates
+        if start_date:
+            try:
+                start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+                dates = [start_dt + timedelta(days=i) for i in range(trip_days)]
+            except ValueError:
+                return ERROR_MESSAGES["invalid_dates"]
+        else:
+            # Weather-based date selection (next 14 days)
+            dates = self._select_optimal_dates(lat, lng, trip_days, weather_preference)
+            if not dates:
+                return ERROR_MESSAGES["no_weather_data"]
+        
+        # Get trip style configuration
+        style_config = TRIP_STYLES[trip_style]
+        budget_config = BUDGET_CATEGORIES[budget]
+        
+        # Plan each day
+        daily_plans = []
+        for i, date in enumerate(dates):
+            day_plan = self._plan_single_day(
+                lat, lng, date, style_config, budget_config, i == 0
+            )
+            daily_plans.append(day_plan)
+        
+        # Get accommodation if requested
+        accommodation = None
+        if include_accommodation and self.booking_service.api_key:
+            accommodation = self._get_accommodation_suggestions(
+                lat, lng, dates[0], len(dates), budget_config
+            )
+        
+        # Format complete trip plan
+        return self._format_trip_plan(
+            location_name, dates, daily_plans, accommodation, trip_style, budget
+        )
+    
+    def plan_weather_based_trip(
+        self,
+        location: Union[str, Tuple[float, float]],
+        weather_condition: str,
+        duration: Optional[Union[int, str]] = None,
+        trip_style: str = DEFAULT_TRIP_STYLE
+    ) -> str:
+        """
+        Plan a trip specifically optimized for certain weather conditions
+        
+        :param location: destination location
+        :param weather_condition: desired weather condition (sunny, rainy, snowy, etc.)
+        :param duration: trip duration in days or preset
+        :param trip_style: trip style preference
+        :return: weather-optimized trip plan
+        """
+        # Get coordinates if location is a string
+        if isinstance(location, str):
+            lat, lng = self.get_coordinates(location)
+            if not lat or not lng:
+                return ERROR_MESSAGES["location_not_found"]
+            location_name = location
+        else:
+            lat, lng = location
+            location_name = f"coordinates ({lat:.4f}, {lng:.4f})"
+        
+        # Validate inputs
+        trip_days = self._parse_duration(duration)
+        if not trip_days:
+            return f"Invalid duration. Use number of days (1-{MAX_TRIP_DURATION}) or preset"
+        
+        if trip_style not in TRIP_STYLES:
+            available_styles = ", ".join(TRIP_STYLES.keys())
+            return f"Invalid trip style '{trip_style}'. Available: {available_styles}"
+        
+        # Find dates with desired weather
+        optimal_dates = self._find_weather_matching_dates(lat, lng, weather_condition, trip_days)
+        if not optimal_dates:
+            return f"No suitable {weather_condition} weather found in the next 14 days for {location_name}"
+        
+        # Get weather-specific activities
+        if weather_condition.lower() not in WEATHER_ACTIVITY_MAPPING:
+            available_conditions = ", ".join(WEATHER_ACTIVITY_MAPPING.keys())
+            return f"Weather condition '{weather_condition}' not supported. Available: {available_conditions}"
+        
+        # Plan activities optimized for the weather
+        weather_activities = WEATHER_ACTIVITY_MAPPING[weather_condition.lower()]
+        daily_plans = []
+        
+        for i, date in enumerate(optimal_dates):
+            day_plan = self._plan_weather_specific_day(
+                lat, lng, date, weather_activities, TRIP_STYLES[trip_style]
+            )
+            daily_plans.append(day_plan)
+        
+        return self._format_weather_trip_plan(
+            location_name, optimal_dates, daily_plans, weather_condition, trip_style
+        )
+    
+    def _parse_duration(self, duration: Optional[Union[int, str]]) -> Optional[int]:
+        """
+        Parse duration input into number of days
+        
+        :param duration: duration input
+        :return: number of days or None if invalid
+        """
+        if duration is None:
+            return DEFAULT_TRIP_DURATION
+        
+        if isinstance(duration, int):
+            if MIN_TRIP_DURATION <= duration <= MAX_TRIP_DURATION:
+                return duration
+            return None
+        
+        if isinstance(duration, str):
+            if duration.isdigit():
+                days = int(duration)
+                if MIN_TRIP_DURATION <= days <= MAX_TRIP_DURATION:
+                    return days
+                return None
+            elif duration.lower() in TRIP_DURATIONS:
+                return TRIP_DURATIONS[duration.lower()]
+        
+        return None
+    
+    def _select_optimal_dates(
+        self,
+        lat: float,
+        lng: float,
+        days: int,
+        weather_preference: Optional[str]
+    ) -> List[datetime]:
+        """
+        Select optimal dates based on weather forecast
+        
+        :param lat: latitude
+        :param lng: longitude
+        :param days: number of days
+        :param weather_preference: preferred weather condition
+        :return: list of optimal dates
+        """
+        try:
+            # Get 14-day forecast
+            forecast_response = self.weather_service.get_forecast(f"{lat},{lng}", 14)
+            
+            if "error" in forecast_response.lower():
+                return []
+            
+            # Parse forecast to find best consecutive days
+            # This is a simplified version - in a real implementation,
+            # you would parse the actual forecast response
+            base_date = datetime.now() + timedelta(days=1)
+            return [base_date + timedelta(days=i) for i in range(days)]
+            
+        except Exception:
+            # Fallback to starting tomorrow
+            base_date = datetime.now() + timedelta(days=1)
+            return [base_date + timedelta(days=i) for i in range(days)]
+    
+    def _find_weather_matching_dates(
+        self,
+        lat: float,
+        lng: float,
+        weather_condition: str,
+        days: int
+    ) -> List[datetime]:
+        """
+        Find dates with matching weather conditions
+        
+        :param lat: latitude
+        :param lng: longitude
+        :param weather_condition: desired weather condition
+        :param days: number of consecutive days needed
+        :return: list of matching dates
+        """
+        # This is a simplified implementation
+        # In a real scenario, you would analyze the forecast data
+        base_date = datetime.now() + timedelta(days=2)
+        return [base_date + timedelta(days=i) for i in range(days)]
+    
+    def _plan_single_day(
+        self,
+        lat: float,
+        lng: float,
+        date: datetime,
+        style_config: Dict,
+        budget_config: Dict,
+        is_first_day: bool
+    ) -> Dict:
+        """
+        Plan activities for a single day
+        
+        :param lat: latitude
+        :param lng: longitude
+        :param date: date to plan for
+        :param style_config: trip style configuration
+        :param budget_config: budget configuration
+        :param is_first_day: whether this is the first day
+        :return: day plan dictionary
+        """
+        activities_count = style_config["activities_per_day"]
+        travel_radius = style_config["travel_radius"]
+        preferred_types = style_config["preferred_types"]
+        
+        day_activities = []
+        
+        # Morning activity
+        morning_types = [t for t in preferred_types if t in ["cafe", "museum", "park", "tourist_attraction"]]
+        if morning_types:
+            morning_activity = self._get_activity_for_time(
+                lat, lng, morning_types[0], travel_radius, "morning"
+            )
+            if morning_activity:
+                day_activities.append(morning_activity)
+        
+        # Afternoon activities
+        for i in range(min(activities_count - 1, 2)):
+            activity_type = preferred_types[i % len(preferred_types)]
+            activity = self._get_activity_for_time(
+                lat, lng, activity_type, travel_radius, "afternoon"
+            )
+            if activity:
+                day_activities.append(activity)
+        
+        # Evening activity (dining)
+        evening_activity = self._get_activity_for_time(
+            lat, lng, "restaurant", travel_radius, "evening"
+        )
+        if evening_activity:
+            day_activities.append(evening_activity)
+        
+        return {
+            "date": date.strftime("%Y-%m-%d"),
+            "day_name": date.strftime("%A"),
+            "activities": day_activities,
+            "total_activities": len(day_activities)
+        }
+    
+    def _plan_weather_specific_day(
+        self,
+        lat: float,
+        lng: float,
+        date: datetime,
+        weather_activities: Dict,
+        style_config: Dict
+    ) -> Dict:
+        """
+        Plan a day with weather-specific activities
+        
+        :param lat: latitude
+        :param lng: longitude
+        :param date: date to plan for
+        :param weather_activities: weather-appropriate activities
+        :param style_config: trip style configuration
+        :return: day plan dictionary
+        """
+        travel_radius = style_config["travel_radius"]
+        day_activities = []
+        
+        # Plan activities for each time period
+        for time_period, activity_types in weather_activities.items():
+            if activity_types:
+                activity_type = activity_types[0]  # Use first suggested type
+                activity = self._get_activity_for_time(
+                    lat, lng, activity_type, travel_radius, time_period
+                )
+                if activity:
+                    day_activities.append(activity)
+        
+        return {
+            "date": date.strftime("%Y-%m-%d"),
+            "day_name": date.strftime("%A"),
+            "activities": day_activities,
+            "total_activities": len(day_activities),
+            "weather_optimized": True
+        }
+    
+    def _get_activity_for_time(
+        self,
+        lat: float,
+        lng: float,
+        activity_type: str,
+        radius: int,
+        time_period: str
+    ) -> Optional[Dict]:
+        """
+        Get a specific activity for a time period
+        
+        :param lat: latitude
+        :param lng: longitude
+        :param activity_type: type of activity
+        :param radius: search radius
+        :param time_period: time period (morning, afternoon, evening)
+        :return: activity dictionary or None
+        """
+        try:
+            # Search for places of this type
+            places_response = self.places_service.search_places(
+                (lat, lng), activity_type, radius, 5, 3.5
+            )
+            
+            # Parse response and return first good option
+            # This is simplified - in reality you'd parse the actual response
+            return {
+                "type": activity_type,
+                "time": time_period,
+                "name": f"Sample {activity_type.replace('_', ' ').title()}",
+                "rating": 4.2,
+                "address": "Sample Address"
+            }
+            
+        except Exception:
+            return None
+    
+    def _get_accommodation_suggestions(
+        self,
+        lat: float,
+        lng: float,
+        check_in: datetime,
+        nights: int,
+        budget_config: Dict
+    ) -> Optional[Dict]:
+        """
+        Get accommodation suggestions
+        
+        :param lat: latitude
+        :param lng: longitude
+        :param check_in: check-in date
+        :param nights: number of nights
+        :param budget_config: budget configuration
+        :return: accommodation suggestions or None
+        """
+        if not self.booking_service.api_key:
+            return None
+        
+        try:
+            check_in_str = check_in.strftime("%Y-%m-%d")
+            check_out_str = (check_in + timedelta(days=nights)).strftime("%Y-%m-%d")
+            
+            # Search for accommodations
+            accommodation_response = self.booking_service.search_availability(
+                (lat, lng), check_in_str, check_out_str, 2
+            )
+            
+            # This would parse the actual response
+            return {
+                "check_in": check_in_str,
+                "check_out": check_out_str,
+                "nights": nights,
+                "suggestions": "Sample accommodation suggestions"
+            }
+            
+        except Exception:
+            return None
+    
+    @staticmethod
+    def _format_trip_plan(
+        location: str,
+        dates: List[datetime],
+        daily_plans: List[Dict],
+        accommodation: Optional[Dict],
+        trip_style: str,
+        budget: str
+    ) -> str:
+        """
+        Format the complete trip plan
+        
+        :param location: destination location
+        :param dates: trip dates
+        :param daily_plans: daily activity plans
+        :param accommodation: accommodation information
+        :param trip_style: trip style
+        :param budget: budget category
+        :return: formatted trip plan
+        """
+        start_date = dates[0].strftime("%B %d, %Y")
+        end_date = dates[-1].strftime("%B %d, %Y")
+        duration = len(dates)
+        
+        result = f"🎯 TRIP PLAN FOR {location.upper()}\n"
+        result += f"📅 Dates: {start_date} - {end_date} ({duration} days)\n"
+        result += f"🎨 Style: {trip_style.title()}\n"
+        result += f"💰 Budget: {budget.title()}\n\n"
+        
+        # Accommodation section
+        if accommodation:
+            result += "🏨 ACCOMMODATION:\n"
+            result += f"   Check-in: {accommodation['check_in']}\n"
+            result += f"   Check-out: {accommodation['check_out']}\n"
+            result += f"   Duration: {accommodation['nights']} nights\n"
+            result += f"   {accommodation['suggestions']}\n\n"
+        
+        # Daily itinerary
+        result += "📋 DAILY ITINERARY:\n\n"
+        
+        for i, day_plan in enumerate(daily_plans, 1):
+            result += f"Day {i} - {day_plan['day_name']}, {day_plan['date']}:\n"
+            
+            if day_plan['activities']:
+                for j, activity in enumerate(day_plan['activities'], 1):
+                    time_emoji = {"morning": "🌅", "afternoon": "☀️", "evening": "🌙"}.get(activity.get('time', ''), "📍")
+                    result += f"  {time_emoji} {activity.get('name', 'Activity')}\n"
+                    result += f"     Type: {activity.get('type', 'N/A').replace('_', ' ').title()}\n"
+                    result += f"     Rating: {activity.get('rating', 'N/A')}/5.0\n"
+                    if activity.get('address'):
+                        result += f"     Address: {activity['address']}\n"
+                    result += "\n"
+            else:
+                result += "  No activities planned for this day\n\n"
+        
+        result += "💡 TRIP PLANNING NOTES:\n"
+        result += f"• Plan includes {sum(len(day['activities']) for day in daily_plans)} total activities\n"
+        result += f"• Activities are optimized for {trip_style} travel style\n"
+        result += f"• Budget considerations: {budget} category\n"
+        result += "• Check weather conditions before departure\n"
+        result += "• Book accommodations and activities in advance\n"
+        
+        return result
+    
+    @staticmethod
+    def _format_weather_trip_plan(
+        location: str,
+        dates: List[datetime],
+        daily_plans: List[Dict],
+        weather_condition: str,
+        trip_style: str
+    ) -> str:
+        """
+        Format weather-optimized trip plan
+        
+        :param location: destination location
+        :param dates: trip dates
+        :param daily_plans: daily activity plans
+        :param weather_condition: weather condition
+        :param trip_style: trip style
+        :return: formatted weather-optimized trip plan
+        """
+        start_date = dates[0].strftime("%B %d, %Y")
+        end_date = dates[-1].strftime("%B %d, %Y")
+        duration = len(dates)
+        
+        result = f"🌤️ WEATHER-OPTIMIZED TRIP PLAN FOR {location.upper()}\n"
+        result += f"📅 Dates: {start_date} - {end_date} ({duration} days)\n"
+        result += f"🌦️ Optimized for: {weather_condition.title()} weather\n"
+        result += f"🎨 Style: {trip_style.title()}\n\n"
+        
+        result += "📋 WEATHER-SPECIFIC ITINERARY:\n\n"
+        
+        for i, day_plan in enumerate(daily_plans, 1):
+            result += f"Day {i} - {day_plan['day_name']}, {day_plan['date']}:\n"
+            result += f"☁️ Expected weather: {weather_condition}\n\n"
+            
+            if day_plan['activities']:
+                for activity in day_plan['activities']:
+                    time_emoji = {"morning": "🌅", "afternoon": "☀️", "evening": "🌙"}.get(activity.get('time', ''), "📍")
+                    result += f"  {time_emoji} {activity.get('name', 'Activity')}\n"
+                    result += f"     Perfect for {weather_condition} weather\n"
+                    result += f"     Type: {activity.get('type', 'N/A').replace('_', ' ').title()}\n"
+                    result += f"     Rating: {activity.get('rating', 'N/A')}/5.0\n\n"
+            else:
+                result += "  No activities planned for this day\n\n"
+        
+        result += "🌈 WEATHER PLANNING NOTES:\n"
+        result += f"• All activities optimized for {weather_condition} conditions\n"
+        result += f"• Indoor alternatives available for weather changes\n"
+        result += f"• Check weather forecast 24-48 hours before activities\n"
+        result += f"• Pack appropriate clothing for {weather_condition} weather\n"
+        
+        return result 

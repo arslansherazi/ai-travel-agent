@@ -323,10 +323,9 @@ class BookingService(BaseService):
         :param response: API response data
         :return: formatted search results
         """
+        location_str = location
         if isinstance(location, tuple):
             location_str = f"coordinates ({location[0]:.4f}, {location[1]:.4f})"
-        else:
-            location_str = location
         
         result = f"Accommodation search results for {location_str}:\n\n"
         

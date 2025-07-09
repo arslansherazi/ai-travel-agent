@@ -4,7 +4,7 @@ import requests
 from typing import Tuple, Optional, Dict, Any
 from abc import ABC
 
-from mcp.servers.constants import GEOCODING_API_URL, RequestMethod
+from mcp.servers.constants import GEOCODING_API_URL, DEFAULT_TIMEOUT
 
 
 class BaseService(ABC):
@@ -47,8 +47,8 @@ class BaseService(ABC):
         url: str,
         params: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, str]] = None,
-        method: str = RequestMethod.GET.value,
-        timeout: int = 30
+        method: str = "GET",
+        timeout: int = DEFAULT_TIMEOUT
     ) -> Dict[str, Any]:
         """
         Make an API request with error handling
@@ -61,9 +61,9 @@ class BaseService(ABC):
         :return: API response data or error dict
         """
         try:
-            if method.upper() == RequestMethod.GET.value:
+            if method.upper() == "GET":
                 response = requests.get(url, params=params, headers=headers, timeout=timeout)
-            elif method.upper() == RequestMethod.POST.value:
+            elif method.upper() == "POST":
                 response = requests.post(url, json=params, headers=headers, timeout=timeout)
             else:
                 return {"error": f"Unsupported HTTP method: {method}"}
