@@ -4,7 +4,7 @@ import requests
 from typing import Tuple, Optional, Dict, Any
 from abc import ABC
 
-from mcp.servers.constants import GEOCODING_API_URL
+from mcp.servers.constants import GEOCODING_API_URL, RequestMethod
 
 
 class BaseService(ABC):
@@ -47,7 +47,7 @@ class BaseService(ABC):
         url: str,
         params: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, str]] = None,
-        method: str = "GET",
+        method: str = RequestMethod.GET.value,
         timeout: int = 30
     ) -> Dict[str, Any]:
         """
@@ -61,37 +61,16 @@ class BaseService(ABC):
         :return: API response data or error dict
         """
         try:
-            if method.upper() == "GET":
+            if method.upper() == RequestMethod.GET.value:
                 response = requests.get(url, params=params, headers=headers, timeout=timeout)
-            elif method.upper() == "POST":
+            elif method.upper() == RequestMethod.POST.value:
                 response = requests.post(url, json=params, headers=headers, timeout=timeout)
             else:
                 return {"error": f"Unsupported HTTP method: {method}"}
-            
-            # Handle common HTTP status codes
+
             if response.status_code == 200:
                 return response.json()
-            elif response.status_code == 401:
-                return {"error": "Unauthorized: Invalid API key or credentials"}
-            elif response.status_code == 403:
-                return {"error": "Forbidden: Access denied"}
-            elif response.status_code == 404:
-                return {"error": "Not found: Endpoint or resource not available"}
-            elif response.status_code == 429:
-                return {"error": "Rate limit exceeded: Too many requests"}
-            elif response.status_code == 500:
-                return {"error": "Internal server error: API service unavailable"}
-            else:
-                return {"error": f"API request failed with status {response.status_code}"}
-                
-        except requests.exceptions.Timeout:
-            return {"error": f"Request timeout after {timeout} seconds"}
-        except requests.exceptions.ConnectionError:
-            return {"error": "Connection error: Unable to reach API service"}
-        except requests.exceptions.RequestException as e:
-            return {"error": f"Network error: {str(e)}"}
-        except ValueError as e:
-            return {"error": f"JSON decode error: {str(e)}"}
+            return {"error": f"HTTP error {response.status_code}"}
         except Exception as e:
             return {"error": f"Unexpected error: {str(e)}"}
     
