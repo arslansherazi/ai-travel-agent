@@ -1,10 +1,11 @@
-"""Weather service module containing the WeatherService utils"""
+"""
+Weather service module containing the WeatherService utils
+"""
 
-import requests
-from typing import Tuple, List, Dict, Optional
-from .constants import (
+from typing import List, Dict
+from mcp.servers.base_service import BaseService
+from mcp.servers.weather.constants import (
     WEATHER_API_BASE_URL,
-    GEOCODING_API_BASE_URL,
     CURRENT_WEATHER_PARAMS,
     DAILY_FORECAST_PARAMS,
     DETAILED_DAILY_PARAMS,
@@ -19,40 +20,10 @@ from .constants import (
 )
 
 
-class WeatherService:
+class WeatherService(BaseService):
     """
     Service class for weather-related operations
     """
-    @staticmethod
-    def get_coordinates(location: str) -> Tuple[Optional[float], Optional[float]]:
-        """
-        Get latitude and longitude for a location using Open-Meteo Geocoding API
-        
-        :param location: location name (city, address, etc.)
-        :return: tuple of (latitude, longitude) or (None, None) if not found
-        """
-        params = {
-            "name": location,
-            "count": 1,  # Get only the top result
-            "language": "en",
-            "format": "json"
-        }
-        
-        try:
-            response = requests.get(GEOCODING_API_BASE_URL, params=params)
-            data = response.json()
-            
-            results = data.get("results", [])
-            if not results:
-                return None, None
-            
-            # Return the coordinates of the first result
-            return results[0].get("latitude"), results[0].get("longitude")
-            
-        except Exception as e:
-            print(f"Error in geocoding: {e}")
-            return None, None
-    
     def get_current_weather(self, location: str) -> str:
         """
         Get current weather and forecast for a location
@@ -73,14 +44,13 @@ class WeatherService:
             "timezone": "auto"
         }
         
-        response = requests.get(WEATHER_API_BASE_URL, params=params)
+        data = self.make_api_request(WEATHER_API_BASE_URL, params=params)
         
-        if response.status_code != 200:
-            return f"Error fetching weather data: {response.status_code}"
+        if data.get("error"):
+            return self.format_error_response(data["error"], "weather data fetch")
         
-        data = response.json()
-        return self._format_weather_report(location, data)
-    
+        return WeatherService._format_weather_report(location, data)
+
     def get_trip_recommendations(self, location: str) -> str:
         """
         Find the best days for a trip based on weather conditions
@@ -100,18 +70,17 @@ class WeatherService:
             "timezone": "auto"
         }
         
-        response = requests.get(WEATHER_API_BASE_URL, params=params)
+        data = self.make_api_request(WEATHER_API_BASE_URL, params=params)
         
-        if response.status_code != 200:
-            return f"Error fetching weather data: {response.status_code}"
+        if data.get("error"):
+            return self.format_error_response(data["error"], "weather forecast data fetch")
         
-        data = response.json()
         daily = data.get("daily", {})
         
         # Score and rank days
-        days = self._score_weather_days(daily)
-        return self._format_trip_recommendations(location, days)
-    
+        days = WeatherService._score_weather_days(daily)
+        return WeatherService._format_trip_recommendations(location, days)
+
     def get_severe_weather_events(self, location: str) -> str:
         """
         Get severe weather events for a location
@@ -133,17 +102,16 @@ class WeatherService:
             "timezone": "auto"
         }
         
-        response = requests.get(WEATHER_API_BASE_URL, params=params)
+        data = self.make_api_request(WEATHER_API_BASE_URL, params=params)
         
-        if response.status_code != 200:
-            return f"Error fetching weather data: {response.status_code}"
+        if data.get("error"):
+            return self.format_error_response(data["error"], "weather events data fetch")
         
-        data = response.json()
         hourly = data.get("hourly", {})
         
         # Detect severe weather events
-        events = self._detect_severe_weather_events(hourly)
-        return self._format_weather_events(location, events)
+        events = WeatherService._detect_severe_weather_events(hourly)
+        return WeatherService._format_weather_events(location, events)
 
     @staticmethod
     def _format_weather_report(location: str, data: Dict) -> str:
@@ -158,12 +126,12 @@ class WeatherService:
         daily = data.get("daily", {})
         
         report = f"Weather for {location}:\n"
-        report += f"Current Temperature: {current.get('temperature_2m', 'N/A')} {data.get('current_units', {}).get('temperature_2m', '°C')}\n"
-        report += f"Feels Like: {current.get('apparent_temperature', 'N/A')} {data.get('current_units', {}).get('apparent_temperature', '°C')}\n"
-        report += f"Humidity: {current.get('relative_humidity_2m', 'N/A')} {data.get('current_units', {}).get('relative_humidity_2m', '%')}\n"
-        report += f"Precipitation: {current.get('precipitation', 'N/A')} {data.get('current_units', {}).get('precipitation', 'mm')}\n"
-        report += f"Wind Speed: {current.get('wind_speed_10m', 'N/A')} {data.get('current_units', {}).get('wind_speed_10m', 'km/h')}\n"
-        report += f"Wind Direction: {current.get('wind_direction_10m', 'N/A')} {data.get('current_units', {}).get('wind_direction_10m', '°')}\n\n"
+        report += f"Current Temperature: {current.get("temperature_2m", "N/A")} {data.get("current_units", {}).get("temperature_2m", "°C")}\n"
+        report += f"Feels Like: {current.get("apparent_temperature", "N/A")} {data.get("current_units", {}).get("apparent_temperature", "°C")}\n"
+        report += f"Humidity: {current.get("relative_humidity_2m", "N/A")} {data.get("current_units", {}).get("relative_humidity_2m", "%")}\n"
+        report += f"Precipitation: {current.get("precipitation", "N/A")} {data.get("current_units", {}).get("precipitation", "mm")}\n"
+        report += f"Wind Speed: {current.get("wind_speed_10m", "N/A")} {data.get("current_units", {}).get("wind_speed_10m", "km/h")}\n"
+        report += f"Wind Direction: {current.get("wind_direction_10m", "N/A")} {data.get("current_units", {}).get("wind_direction_10m", "°")}\n\n"
         
         # Add forecast for next few days
         report += "Forecast for the next days:\n"
@@ -174,13 +142,14 @@ class WeatherService:
             precip = daily.get("precipitation_sum", [])[i]
             wind = daily.get("wind_speed_10m_max", [])[i]
             
-            report += f"{date}: {min_temp}-{max_temp} {data.get('daily_units', {}).get('temperature_2m_max', '°C')}, "
-            report += f"Precipitation: {precip} {data.get('daily_units', {}).get('precipitation_sum', 'mm')}, "
-            report += f"Wind: {wind} {data.get('daily_units', {}).get('wind_speed_10m_max', 'km/h')}\n"
+            report += f"{date}: {min_temp}-{max_temp} {data.get("daily_units", {}).get("temperature_2m_max", "°C")}, "
+            report += f"Precipitation: {precip} {data.get("daily_units", {}).get("precipitation_sum", "mm")}, "
+            report += f"Wind: {wind} {data.get("daily_units", {}).get("wind_speed_10m_max", "km/h")}\n"
         
         return report
     
-    def _score_weather_days(self, daily: Dict) -> List[Dict]:
+    @staticmethod
+    def _score_weather_days(daily: Dict) -> List[Dict]:
         """
         Score weather days based on conditions
         
@@ -198,7 +167,7 @@ class WeatherService:
             weather_code = daily.get("weather_code", [])[i]
             
             # Calculate score
-            score = self._calculate_day_score(max_temp, min_temp, precip_sum, precip_prob, wind, weather_code)
+            score = WeatherService._calculate_day_score(max_temp, min_temp, precip_sum, precip_prob, wind, weather_code)
             days.append({"date": date, "score": score, "max_temp": max_temp, "precip": precip_sum})
         
         # Sort by score (highest first)
@@ -220,7 +189,7 @@ class WeatherService:
         :param weather_code: weather code
         :return: weather score (0-100)
         """
-        score = 100
+        score = 100.0  # Use float for calculations
         
         # Temperature penalty
         if max_temp > TEMPERATURE_THRESHOLDS["extreme"]["max"] or min_temp < TEMPERATURE_THRESHOLDS["extreme"]["min"]:
@@ -229,8 +198,8 @@ class WeatherService:
             score -= TEMPERATURE_THRESHOLDS["moderate"]["penalty"]
         
         # Precipitation penalty
-        score -= min(50, precip_sum * 10)  # Up to 50 points off for heavy rain
-        score -= min(30, precip_prob / 2)  # Up to 30 points off for high probability
+        score -= min(50.0, precip_sum * 10.0)  # Up to 50 points off for heavy rain
+        score -= min(30.0, precip_prob / 2.0)  # Up to 30 points off for high probability
         
         # Wind penalty
         if wind > WIND_THRESHOLDS["severe"]["speed"]:
@@ -246,7 +215,7 @@ class WeatherService:
         elif weather_code >= WEATHER_CODE_PENALTIES["drizzle"]["min"]:
             score -= WEATHER_CODE_PENALTIES["drizzle"]["penalty"]
         
-        return max(0, score)
+        return int(max(0.0, score))  # Convert back to int for return
 
     @staticmethod
     def _format_trip_recommendations(location: str, days: List[Dict]) -> str:
@@ -259,11 +228,11 @@ class WeatherService:
         """
         result = f"Best days for a trip to {location} in the next week:\n"
         for i, day in enumerate(days[:MAX_DISPLAY_DAYS]):
-            result += f"{i+1}. {day['date']}: Score {day['score']}/100, Max temp: {day['max_temp']}°C, Precipitation: {day['precip']}mm\n"
+            result += f"{i+1}. {day["date"]}: Score {day["score"]}/100, Max temp: {day["max_temp"]}°C, Precipitation: {day["precip"]}mm\n"
         
         result += "\nDays to avoid:\n"
         for day in days[-2:]:
-            result += f"{day['date']}: Score {day['score']}/100, Max temp: {day['max_temp']}°C, Precipitation: {day['precip']}mm\n"
+            result += f"{day["date"]}: Score {day["score"]}/100, Max temp: {day["max_temp"]}°C, Precipitation: {day["precip"]}mm\n"
         
         return result
 
@@ -326,6 +295,6 @@ class WeatherService:
             result += f"\n{day}:\n"
             for event in day_events:
                 time = event["time"].split("T")[1]
-                result += f"  {time}: {event['event']} - {event['value']}\n"
+                result += f"  {time}: {event["event"]} - {event["value"]}\n"
         
         return result
