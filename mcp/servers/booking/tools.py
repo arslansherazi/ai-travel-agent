@@ -4,7 +4,6 @@ import os
 
 server = FastMCP("Booking Server")
 
-# Initialize the booking service with API key from environment
 booking_service = BookingService(api_key=os.getenv("BOOKING_API_KEY"))
 
 @server.tool()
@@ -67,7 +66,7 @@ def search_specific_accommodations(
 @server.tool()
 def get_accommodation_details(hotel_id: str) -> str:
     """
-    Get detailed information about a specific accommodation including photos, reviews, contact details, and booking URLs
+    Get detailed information about specific accommodation including photos, reviews, contact details, and booking URLs
 
     :param hotel_id: unique hotel identifier from search results
     :return: detailed accommodation information including photos, reviews, contact info, amenities, and booking URL
