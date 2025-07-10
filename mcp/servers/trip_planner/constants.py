@@ -1,4 +1,6 @@
-"""Trip planner service constants"""
+"""
+Trip planner service constants
+"""
 
 # Trip Duration Presets (in days)
 TRIP_DURATIONS = {
@@ -144,7 +146,7 @@ PLANNING_PRIORITIES = {
 
 # Accommodation search parameters
 ACCOMMODATION_SEARCH = {
-    "search_radius": 5000,  # 5km from city center
+    "search_radius": 5000,  # 5 km from city center
     "min_rating": 3.5,
     "nights_offset": 0  # How many days before trip to search
 }

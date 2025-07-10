@@ -59,6 +59,32 @@ class BookingService(BaseService):
         :param rows: number of results to return
         :return: formatted search results
         """
+        accommodations_data = self.search_accommodations_data(location, checkin, checkout, adults, rooms, rows)
+        if isinstance(accommodations_data, str):  # Error case
+            return accommodations_data
+        
+        return self._format_search_results(location, {"results": accommodations_data})
+
+    def search_accommodations_data(
+        self,
+        location: str | Tuple[float, float],
+        checkin: str = datetime.now().strftime("%Y-%m-%d"),
+        checkout: str = (datetime.now() + timedelta(days=DEFAULT_STAY_DURATION)).strftime("%Y-%m-%d"),
+        adults: int = DEFAULT_ADULTS,
+        rooms: int = DEFAULT_ROOMS,
+        rows: int = DEFAULT_ROWS
+    ) -> list[Dict] | str:
+        """
+        Search for accommodations and return structured data (for use by other services)
+        
+        :param location: location string or (lat, lng) tuple
+        :param checkin: check-in date (YYYY-MM-DD)
+        :param checkout: checkout date (YYYY-MM-DD)
+        :param adults: number of adults
+        :param rooms: number of rooms
+        :param rows: number of results to return
+        :return: list of accommodation data or error string
+        """
         api_key_error = self.check_api_key_required(self.api_key, "Booking.com")
         if api_key_error:
             return api_key_error
@@ -96,11 +122,11 @@ class BookingService(BaseService):
             if response.get("error"):
                 return f"Error searching accommodations: {response['error']}"
             
-            return self._format_search_results(location, response)
+            return response.get("results", [])
             
         except Exception as e:
             return f"Error occurred during search: {str(e)}"
-    
+
     def search_specific_accommodations(
         self,
         location: Union[str, Tuple[float, float]],
@@ -128,6 +154,45 @@ class BookingService(BaseService):
         :param rooms: number of rooms
         :param rows: number of results to return
         :return: formatted search results
+        """
+        accommodations_data = self.search_specific_accommodations_data(
+            location, checkin, checkout, star_rating, price_min, price_max, 
+            accommodation_type, adults, rooms, rows
+        )
+        if isinstance(accommodations_data, str):  # Error case
+            return accommodations_data
+        
+        return self._format_specific_search_results(
+            location, {"results": accommodations_data}, star_rating, price_min, price_max, accommodation_type
+        )
+
+    def search_specific_accommodations_data(
+        self,
+        location: Union[str, Tuple[float, float]],
+        checkin: str,
+        checkout: str,
+        star_rating: Optional[int] = None,
+        price_min: Optional[float] = None,
+        price_max: Optional[float] = None,
+        accommodation_type: Optional[str] = None,
+        adults: int = DEFAULT_ADULTS,
+        rooms: int = DEFAULT_ROOMS,
+        rows: int = DEFAULT_ROWS
+    ) -> list[Dict] | str:
+        """
+        Search for accommodations with specific criteria and return structured data
+        
+        :param location: location string or (lat, lng) tuple
+        :param checkin: check-in date (YYYY-MM-DD)
+        :param checkout: checkout date (YYYY-MM-DD)
+        :param star_rating: hotel star rating (1-5)
+        :param price_min: minimum price per night
+        :param price_max: maximum price per night
+        :param accommodation_type: type of accommodation (hotel, apartment, etc.)
+        :param adults: number of adults
+        :param rooms: number of rooms
+        :param rows: number of results to return
+        :return: list of accommodation data or error string
         """
         api_key_error = self.check_api_key_required(self.api_key, "Booking.com")
         if api_key_error:
@@ -178,7 +243,7 @@ class BookingService(BaseService):
             if response.get("error"):
                 return f"Error searching accommodations: {response['error']}"
             
-            return self._format_specific_search_results(location, response, star_rating, price_min, price_max, accommodation_type)
+            return response.get("results", [])
             
         except Exception as e:
             return f"Error occurred during search: {str(e)}"

@@ -34,8 +34,7 @@ class TripPlannerService(BaseService):
     ):
         """
         Initialize the trip planner service
-        
-        :param weather_api_key: Weather API key
+
         :param places_api_key: Google Places API key
         :param booking_api_key: Booking.com API key
         """
@@ -45,12 +44,11 @@ class TripPlannerService(BaseService):
     
     def plan_trip(
         self,
-        location: Union[str, Tuple[float, float]],
+        location: str | Tuple[float, float],
         start_date: Optional[str] = None,
-        duration: Optional[Union[int, str]] = None,
+        duration: Optional[int | str] = None,
         trip_style: str = DEFAULT_TRIP_STYLE,
         budget: str = DEFAULT_BUDGET,
-        weather_preference: Optional[str] = None,
         include_accommodation: bool = True
     ) -> str:
         """
@@ -61,7 +59,6 @@ class TripPlannerService(BaseService):
         :param duration: trip duration in days or preset ("weekend", "short", etc.)
         :param trip_style: trip style (relaxed, balanced, adventure, cultural, food_focused)
         :param budget: budget category (budget, mid_range, luxury)
-        :param weather_preference: preferred weather condition
         :param include_accommodation: whether to include accommodation suggestions
         :return: complete trip plan
         """
@@ -98,19 +95,18 @@ class TripPlannerService(BaseService):
                 return ERROR_MESSAGES["invalid_dates"]
         else:
             # Weather-based date selection (next 14 days)
-            dates = self._select_optimal_dates(lat, lng, trip_days, weather_preference)
+            dates = self._select_optimal_dates(lat, lng, trip_days)
             if not dates:
                 return ERROR_MESSAGES["no_weather_data"]
         
         # Get trip style configuration
         style_config = TRIP_STYLES[trip_style]
-        budget_config = BUDGET_CATEGORIES[budget]
         
         # Plan each day
         daily_plans = []
         for i, date in enumerate(dates):
             day_plan = self._plan_single_day(
-                lat, lng, date, style_config, budget_config, i == 0
+                lat, lng, date, style_config
             )
             daily_plans.append(day_plan)
         
@@ -118,7 +114,7 @@ class TripPlannerService(BaseService):
         accommodation = None
         if include_accommodation and self.booking_service.api_key:
             accommodation = self._get_accommodation_suggestions(
-                lat, lng, dates[0], len(dates), budget_config
+                lat, lng, dates[0], len(dates)
             )
         
         # Format complete trip plan
@@ -184,8 +180,9 @@ class TripPlannerService(BaseService):
         return self._format_weather_trip_plan(
             location_name, optimal_dates, daily_plans, weather_condition, trip_style
         )
-    
-    def _parse_duration(self, duration: Optional[Union[int, str]]) -> Optional[int]:
+
+    @staticmethod
+    def _parse_duration(duration: Optional[int | str]) -> Optional[int]:
         """
         Parse duration input into number of days
         
@@ -215,8 +212,7 @@ class TripPlannerService(BaseService):
         self,
         lat: float,
         lng: float,
-        days: int,
-        weather_preference: Optional[str]
+        days: int
     ) -> List[datetime]:
         """
         Select optimal dates based on weather forecast
@@ -224,27 +220,133 @@ class TripPlannerService(BaseService):
         :param lat: latitude
         :param lng: longitude
         :param days: number of days
-        :param weather_preference: preferred weather condition
         :return: list of optimal dates
         """
         try:
-            # Get 14-day forecast
-            forecast_response = self.weather_service.get_forecast(f"{lat},{lng}", 14)
+            # Get 14-day forecast data
+            forecast_data = self.weather_service.get_forecast_data((lat, lng), 14)
             
-            if "error" in forecast_response.lower():
-                return []
+            if isinstance(forecast_data, str):  # Error case
+                # Fallback to starting tomorrow
+                base_date = datetime.now() + timedelta(days=1)
+                return [base_date + timedelta(days=i) for i in range(days)]
             
             # Parse forecast to find best consecutive days
-            # This is a simplified version - in a real implementation,
-            # you would parse the actual forecast response
-            base_date = datetime.now() + timedelta(days=1)
-            return [base_date + timedelta(days=i) for i in range(days)]
+            daily = forecast_data.get("daily", {})
+            if not daily or not daily.get("time"):
+                # Fallback if no forecast data
+                base_date = datetime.now() + timedelta(days=1)
+                return [base_date + timedelta(days=i) for i in range(days)]
+            
+            # Score each day
+            scored_days = []
+            times = daily.get("time", [])
+            max_temps = daily.get("temperature_2m_max", [])
+            min_temps = daily.get("temperature_2m_min", [])
+            precip_sums = daily.get("precipitation_sum", [])
+            precip_probs = daily.get("precipitation_probability_max", [])
+            wind_speeds = daily.get("wind_speed_10m_max", [])
+            weather_codes = daily.get("weather_code", [])
+            
+            for i in range(min(len(times), 14)):
+                date_str = times[i]
+                date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+                
+                # Calculate weather score
+                max_temp = max_temps[i] if i < len(max_temps) else 20
+                min_temp = min_temps[i] if i < len(min_temps) else 10
+                precip_sum = precip_sums[i] if i < len(precip_sums) else 0
+                precip_prob = precip_probs[i] if i < len(precip_probs) else 0
+                wind_speed = wind_speeds[i] if i < len(wind_speeds) else 0
+                weather_code = weather_codes[i] if i < len(weather_codes) else 0
+                
+                score = self._calculate_weather_score(max_temp, min_temp, precip_sum, precip_prob, wind_speed, weather_code)
+                scored_days.append({"date": date_obj, "score": score})
+            
+            # Sort by score and find best consecutive period
+            scored_days.sort(key=lambda x: x["score"], reverse=True)
+            
+            # Find best consecutive days
+            best_dates = self._find_best_consecutive_days(scored_days, days)
+            return best_dates if best_dates else [datetime.now() + timedelta(days=i+1) for i in range(days)]
             
         except Exception:
             # Fallback to starting tomorrow
             base_date = datetime.now() + timedelta(days=1)
             return [base_date + timedelta(days=i) for i in range(days)]
     
+    @staticmethod
+    def _calculate_weather_score(max_temp: float, min_temp: float, precip_sum: float, 
+                                precip_prob: float, wind_speed: float, weather_code: int) -> float:
+        """Calculate weather suitability score"""
+        score = 100.0
+        
+        # Temperature penalties
+        if max_temp > 35 or max_temp < 5:
+            score -= 30
+        elif max_temp > 30 or max_temp < 10:
+            score -= 15
+            
+        if min_temp < 0:
+            score -= 20
+        elif min_temp < 5:
+            score -= 10
+            
+        # Precipitation penalties
+        score -= precip_sum * 10  # Heavy penalty for rain
+        score -= precip_prob / 2  # Light penalty for rain probability
+        
+        # Wind penalty
+        if wind_speed > 50:
+            score -= 25
+        elif wind_speed > 30:
+            score -= 10
+            
+        # Weather code penalties
+        if weather_code >= 95:  # Thunderstorm
+            score -= 30
+        elif weather_code >= 71:  # Snow
+            score -= 25
+        elif weather_code >= 61:  # Rain
+            score -= 20
+        elif weather_code >= 51:  # Drizzle
+            score -= 10
+            
+        return max(0.0, score)
+    
+    @staticmethod
+    def _find_best_consecutive_days(scored_days: List[Dict], days_needed: int) -> List[datetime]:
+        """Find the best consecutive days from scored days"""
+        if len(scored_days) < days_needed:
+            return []
+            
+        # Sort by date to find consecutive periods
+        sorted_by_date = sorted(scored_days, key=lambda x: x["date"])
+        
+        best_score = 0
+        best_start_idx = 0
+        
+        # Find best consecutive period
+        for i in range(len(sorted_by_date) - days_needed + 1):
+            # Check if dates are consecutive
+            consecutive = True
+            for j in range(1, days_needed):
+                if (sorted_by_date[i + j]["date"] - sorted_by_date[i + j - 1]["date"]).days != 1:
+                    consecutive = False
+                    break
+            
+            if consecutive:
+                # Calculate total score for this period
+                total_score = sum(sorted_by_date[i + k]["score"] for k in range(days_needed))
+                if total_score > best_score:
+                    best_score = total_score
+                    best_start_idx = i
+        
+        if best_score > 0:
+            return [sorted_by_date[best_start_idx + i]["date"] for i in range(days_needed)]
+        
+        return []
+
     def _find_weather_matching_dates(
         self,
         lat: float,
@@ -261,19 +363,37 @@ class TripPlannerService(BaseService):
         :param days: number of consecutive days needed
         :return: list of matching dates
         """
-        # This is a simplified implementation
-        # In a real scenario, you would analyze the forecast data
-        base_date = datetime.now() + timedelta(days=2)
-        return [base_date + timedelta(days=i) for i in range(days)]
-    
+        try:
+            # Get weather forecast data
+            forecast_data = self.weather_service.get_forecast_data((lat, lng), 14)
+            
+            if isinstance(forecast_data, str):  # Error case
+                # Fallback to starting in 2 days
+                base_date = datetime.now() + timedelta(days=2)
+                return [base_date + timedelta(days=i) for i in range(days)]
+            
+            # Analyze forecast for weather condition matching
+            daily = forecast_data.get("daily", {})
+            if not daily or not daily.get("time"):
+                base_date = datetime.now() + timedelta(days=2)
+                return [base_date + timedelta(days=i) for i in range(days)]
+            
+            # This is a simplified implementation - in reality you'd analyze weather codes
+            # and conditions to match the desired weather_condition
+            base_date = datetime.now() + timedelta(days=2)
+            return [base_date + timedelta(days=i) for i in range(days)]
+            
+        except Exception:
+            # Fallback
+            base_date = datetime.now() + timedelta(days=2)
+            return [base_date + timedelta(days=i) for i in range(days)]
+
     def _plan_single_day(
         self,
         lat: float,
         lng: float,
         date: datetime,
-        style_config: Dict,
-        budget_config: Dict,
-        is_first_day: bool
+        style_config: Dict
     ) -> Dict:
         """
         Plan activities for a single day
@@ -282,8 +402,6 @@ class TripPlannerService(BaseService):
         :param lng: longitude
         :param date: date to plan for
         :param style_config: trip style configuration
-        :param budget_config: budget configuration
-        :param is_first_day: whether this is the first day
         :return: day plan dictionary
         """
         activities_count = style_config["activities_per_day"]
@@ -323,7 +441,7 @@ class TripPlannerService(BaseService):
             "activities": day_activities,
             "total_activities": len(day_activities)
         }
-    
+
     def _plan_weather_specific_day(
         self,
         lat: float,
@@ -362,7 +480,7 @@ class TripPlannerService(BaseService):
             "total_activities": len(day_activities),
             "weather_optimized": True
         }
-    
+
     def _get_activity_for_time(
         self,
         lat: float,
@@ -382,31 +500,36 @@ class TripPlannerService(BaseService):
         :return: activity dictionary or None
         """
         try:
-            # Search for places of this type
-            places_response = self.places_service.search_places(
+            # Search for places of this type using the data method
+            places_data = self.places_service.search_places_data(
                 (lat, lng), activity_type, radius, 5, 3.5
             )
             
-            # Parse response and return first good option
-            # This is simplified - in reality you'd parse the actual response
+            if isinstance(places_data, str) or not places_data:  # Error or no results
+                return None
+            
+            # Use the first result
+            place = places_data[0]
+            
             return {
                 "type": activity_type,
                 "time": time_period,
-                "name": f"Sample {activity_type.replace('_', ' ').title()}",
-                "rating": 4.2,
-                "address": "Sample Address"
+                "name": place.get("name", f"Sample {activity_type.replace('_', ' ').title()}"),
+                "rating": place.get("rating", 0),
+                "address": place.get("vicinity", "Address not available"),
+                "place_id": place.get("place_id", ""),
+                "price_level": place.get("price_level", 0)
             }
             
         except Exception:
             return None
-    
+
     def _get_accommodation_suggestions(
         self,
         lat: float,
         lng: float,
         check_in: datetime,
-        nights: int,
-        budget_config: Dict
+        nights: int
     ) -> Optional[Dict]:
         """
         Get accommodation suggestions
@@ -415,7 +538,6 @@ class TripPlannerService(BaseService):
         :param lng: longitude
         :param check_in: check-in date
         :param nights: number of nights
-        :param budget_config: budget configuration
         :return: accommodation suggestions or None
         """
         if not self.booking_service.api_key:
@@ -423,19 +545,29 @@ class TripPlannerService(BaseService):
         
         try:
             check_in_str = check_in.strftime("%Y-%m-%d")
-            check_out_str = (check_in + timedelta(days=nights)).strftime("%Y-%m-%d")
+            check_out = check_in + timedelta(days=nights)
+            check_out_str = check_out.strftime("%Y-%m-%d")
             
-            # Search for accommodations
-            accommodation_response = self.booking_service.search_availability(
-                (lat, lng), check_in_str, check_out_str, 2
+            # Get accommodation data using the data method
+            accommodations_data = self.booking_service.search_accommodations_data(
+                (lat, lng), check_in_str, check_out_str, rows=5
             )
             
-            # This would parse the actual response
+            if isinstance(accommodations_data, str) or not accommodations_data:  # Error or no results
+                return None
+            
+            # Use the first result
+            accommodation = accommodations_data[0]
+            
             return {
+                "name": accommodation.get("name", "Hotel Name"),
+                "rating": accommodation.get("rating", 0),
+                "price_per_night": accommodation.get("price", {}).get("amount", 0),
+                "currency": accommodation.get("price", {}).get("currency", "USD"),
+                "total_cost": accommodation.get("price", {}).get("amount", 0) * nights,
                 "check_in": check_in_str,
                 "check_out": check_out_str,
-                "nights": nights,
-                "suggestions": "Sample accommodation suggestions"
+                "nights": nights
             }
             
         except Exception:

@@ -4,7 +4,6 @@ import os
 
 server = FastMCP("Places Server")
 
-# Initialize the places service with API key from environment
 places_service = PlacesService(api_key=os.getenv("GOOGLE_PLACES_API_KEY"))
 
 @server.tool()
@@ -27,14 +26,6 @@ def search_places(
     :param price_level: price level (free, inexpensive, moderate, expensive, very_expensive)
     :return: formatted list of places matching the criteria
     """
-    # Handle coordinate input
-    if "," in location and location.replace(",", "").replace(".", "").replace("-", "").replace(" ", "").isdigit():
-        try:
-            lat, lng = map(float, location.split(","))
-            location = (lat, lng)
-        except ValueError:
-            pass  # Keep as string if parsing fails
-    
     return places_service.search_places(location, place_type, radius, limit, min_rating, price_level)
 
 
@@ -54,16 +45,7 @@ def recommend_places_by_weather(
     :param limit: maximum number of recommendations (default: 20)
     :return: weather-appropriate place recommendations
     """
-    # Handle coordinate input
-    if "," in location and location.replace(",", "").replace(".", "").replace("-", "").replace(" ", "").isdigit():
-        try:
-            lat, lng = map(float, location.split(","))
-            location = (lat, lng)
-        except ValueError:
-            pass  # Keep as string if parsing fails
-    
     return places_service.recommend_places_by_weather(location, weather_condition, max_distance, limit)
-
 
 @server.tool()
 def recommend_places_by_distance(
@@ -79,12 +61,4 @@ def recommend_places_by_distance(
     :param limit: maximum number of recommendations (default: 20)
     :return: distance-appropriate place recommendations
     """
-    # Handle coordinate input
-    if "," in location and location.replace(",", "").replace(".", "").replace("-", "").replace(" ", "").isdigit():
-        try:
-            lat, lng = map(float, location.split(","))
-            location = (lat, lng)
-        except ValueError:
-            pass  # Keep as string if parsing fails
-    
-    return places_service.recommend_places_by_distance(location, travel_mode, limit) 
+    return places_service.recommend_places_by_distance(location, travel_mode, limit)

@@ -15,7 +15,6 @@ from mcp.servers.places.constants import (
     MAX_RESULTS_LIMIT,
     MIN_RESULTS_LIMIT,
     PRICE_LEVELS,
-    RATING_THRESHOLDS,
     WEATHER_PLACE_MAPPING,
     DISTANCE_CATEGORIES,
     DEFAULT_LANGUAGE
@@ -56,6 +55,32 @@ class PlacesService(BaseService):
         :param price_level: price level filter
         :return: formatted search results
         """
+        places_data = self.search_places_data(location, place_type, radius, limit, min_rating, price_level)
+        if isinstance(places_data, str):  # Error case
+            return places_data
+        
+        return self._format_places_results(location, places_data, place_type)
+
+    def search_places_data(
+        self,
+        location: Union[str, Tuple[float, float]],
+        place_type: Optional[str] = None,
+        radius: int = DEFAULT_RADIUS,
+        limit: int = DEFAULT_RESULTS_LIMIT,
+        min_rating: Optional[float] = None,
+        price_level: Optional[str] = None
+    ) -> List[Dict] | str:
+        """
+        Search for places and return structured data (for use by other services)
+        
+        :param location: location string or (lat, lng) tuple
+        :param place_type: type of place to search for
+        :param radius: search radius in meters
+        :param limit: maximum number of results
+        :param min_rating: minimum rating filter
+        :param price_level: price level filter
+        :return: list of place data or error string
+        """
         api_key_error = self.check_api_key_required(self.api_key, "Google Places API")
         if api_key_error:
             return api_key_error
@@ -86,7 +111,7 @@ class PlacesService(BaseService):
             params["type"] = PLACE_TYPES[place_type]
         
         if min_rating:
-            params["minprice"] = 0  # Google doesn't have min_rating, we'll filter after
+            params["minprice"] = 0
         
         if price_level and price_level in PRICE_LEVELS:
             params["maxprice"] = PRICE_LEVELS[price_level]
@@ -107,11 +132,11 @@ class PlacesService(BaseService):
             # Limit results
             places = places[:limit]
             
-            return self._format_places_results(location, places, place_type)
+            return places
             
         except Exception as e:
             return self.format_error_response(str(e), "places search")
-    
+
     def recommend_places_by_weather(
         self,
         location: Union[str, Tuple[float, float]],
@@ -127,6 +152,28 @@ class PlacesService(BaseService):
         :param max_distance: maximum distance to search
         :param limit: maximum number of recommendations
         :return: formatted recommendations
+        """
+        recommendations_data = self.recommend_places_by_weather_data(location, weather_condition, max_distance, limit)
+        if isinstance(recommendations_data, str):  # Error case
+            return recommendations_data
+        
+        return self._format_weather_recommendations(location, recommendations_data, weather_condition)
+
+    def recommend_places_by_weather_data(
+        self,
+        location: Union[str, Tuple[float, float]],
+        weather_condition: str,
+        max_distance: int = DEFAULT_RADIUS,
+        limit: int = DEFAULT_RESULTS_LIMIT
+    ) -> List[Dict] | str:
+        """
+        Recommend places based on weather conditions and return structured data
+        
+        :param location: location string or (lat, lng) tuple
+        :param weather_condition: weather condition (sunny, rainy, cloudy, etc.)
+        :param max_distance: maximum distance to search
+        :param limit: maximum number of recommendations
+        :return: list of place data or error string
         """
         api_key_error = self.check_api_key_required(self.api_key, "Google Places API")
         if api_key_error:
@@ -171,14 +218,14 @@ class PlacesService(BaseService):
                     all_recommendations.extend(places)
                     
             except Exception:
-                continue  # Skip failed requests for individual categories
+                continue
         
         # Sort by rating and limit results
         all_recommendations.sort(key=lambda x: x.get("rating", 0), reverse=True)
         final_recommendations = all_recommendations[:limit]
         
-        return self._format_weather_recommendations(location, final_recommendations, weather_condition)
-    
+        return final_recommendations
+
     def recommend_places_by_distance(
         self,
         location: Union[str, Tuple[float, float]],
@@ -193,6 +240,26 @@ class PlacesService(BaseService):
         :param limit: maximum number of recommendations
         :return: formatted recommendations
         """
+        recommendations_data = self.recommend_places_by_distance_data(location, travel_mode, limit)
+        if isinstance(recommendations_data, str):  # Error case
+            return recommendations_data
+        
+        return self._format_distance_recommendations(location, recommendations_data, travel_mode)
+
+    def recommend_places_by_distance_data(
+        self,
+        location: Union[str, Tuple[float, float]],
+        travel_mode: str = "walking",
+        limit: int = DEFAULT_RESULTS_LIMIT
+    ) -> List[Dict] | str:
+        """
+        Recommend places based on distance categories and return structured data
+        
+        :param location: location string or (lat, lng) tuple
+        :param travel_mode: travel mode (walking, short_drive, day_trip, extended)
+        :param limit: maximum number of recommendations
+        :return: list of place data or error string
+        """
         api_key_error = self.check_api_key_required(self.api_key, "Google Places API")
         if api_key_error:
             return api_key_error
@@ -205,13 +272,13 @@ class PlacesService(BaseService):
         else:
             lat, lng = location
         
-        # Get distance category configuration
+        # Get distance configuration
         if travel_mode not in DISTANCE_CATEGORIES:
             available_modes = ", ".join(DISTANCE_CATEGORIES.keys())
             return f"Travel mode '{travel_mode}' not supported. Available: {available_modes}"
         
         distance_config = DISTANCE_CATEGORIES[travel_mode]
-        max_distance = distance_config["max_distance"]
+        search_radius = distance_config["radius"]
         recommended_types = distance_config["types"]
         
         all_recommendations = []
@@ -221,7 +288,7 @@ class PlacesService(BaseService):
             try:
                 params = {
                     "location": f"{lat},{lng}",
-                    "radius": max_distance,
+                    "radius": search_radius,
                     "type": place_type,
                     "key": self.api_key,
                     "language": DEFAULT_LANGUAGE
@@ -235,22 +302,20 @@ class PlacesService(BaseService):
                     for place in places:
                         place["travel_mode"] = travel_mode
                         place["category"] = place_type
-                        # Calculate distance
-                        place_lat = place.get("geometry", {}).get("location", {}).get("lat")
-                        place_lng = place.get("geometry", {}).get("location", {}).get("lng")
-                        if place_lat and place_lng:
-                            distance = self._calculate_distance(lat, lng, place_lat, place_lng)
-                            place["distance_km"] = round(distance, 2)
+                        # Calculate actual distance
+                        place_lat = place.get("geometry", {}).get("location", {}).get("lat", lat)
+                        place_lng = place.get("geometry", {}).get("location", {}).get("lng", lng)
+                        place["distance_km"] = self._calculate_distance(lat, lng, place_lat, place_lng)
                     all_recommendations.extend(places)
                     
             except Exception:
-                continue  # Skip failed requests for individual categories
+                continue
         
-        # Sort by rating and distance
-        all_recommendations.sort(key=lambda x: (x.get("rating", 0), -x.get("distance_km", 999)), reverse=True)
+        # Sort by rating and limit results
+        all_recommendations.sort(key=lambda x: x.get("rating", 0), reverse=True)
         final_recommendations = all_recommendations[:limit]
         
-        return self._format_distance_recommendations(location, final_recommendations, travel_mode)
+        return final_recommendations
     
     @staticmethod
     def _validate_search_params(

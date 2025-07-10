@@ -2,7 +2,7 @@
 Weather service module containing the WeatherService utils
 """
 
-from typing import List, Dict
+from typing import List, Dict, Optional
 from mcp.servers.base_service import BaseService
 from mcp.servers.weather.constants import (
     WEATHER_API_BASE_URL,
@@ -50,6 +50,51 @@ class WeatherService(BaseService):
             return self.format_error_response(data["error"], "weather data fetch")
         
         return WeatherService._format_weather_report(location, data)
+
+    def get_forecast(self, location: str, days: int = DEFAULT_FORECAST_DAYS) -> str:
+        """
+        Get weather forecast for a location
+        
+        :param location: location to check
+        :param days: number of days to forecast
+        :return: weather forecast string
+        """
+        forecast_data = self.get_forecast_data(location, days)
+        if isinstance(forecast_data, str):  # Error case
+            return forecast_data
+        
+        return self._format_forecast_report(location, forecast_data, days)
+    
+    def get_forecast_data(self, location: str | tuple, days: int = DEFAULT_FORECAST_DAYS) -> Dict | str:
+        """
+        Get structured weather forecast data for use by other services
+        
+        :param location: location to check  
+        :param days: number of days to forecast
+        :return: structured weather data or error string
+        """
+        if isinstance(location, tuple):
+            lat, lon = location
+        else:
+            lat, lon = self.get_coordinates(location)
+            if not lat or not lon:
+                return f"Could not find coordinates for {location}"
+        
+        # Get forecast data
+        params = {
+            "latitude": lat,
+            "longitude": lon,
+            "daily": DETAILED_DAILY_PARAMS,
+            "forecast_days": min(days, 16),  # API limit
+            "timezone": "auto"
+        }
+        
+        data = self.make_api_request(WEATHER_API_BASE_URL, params=params)
+        
+        if data.get("error"):
+            return self.format_error_response(data["error"], "weather forecast data fetch")
+        
+        return data
 
     def get_trip_recommendations(self, location: str) -> str:
         """
@@ -149,6 +194,67 @@ class WeatherService(BaseService):
         return report
     
     @staticmethod
+    def _format_forecast_report(location: str, data: Dict, days: int) -> str:
+        """
+        Format forecast data into a readable report
+        
+        :param location: location name
+        :param data: weather data from API
+        :param days: number of days
+        :return: formatted forecast report
+        """
+        daily = data.get("daily", {})
+        
+        report = f"{days}-day weather forecast for {location}:\n\n"
+        
+        for i in range(min(days, len(daily.get("time", [])))):
+            date = daily.get("time", [])[i]
+            max_temp = daily.get("temperature_2m_max", [])[i]
+            min_temp = daily.get("temperature_2m_min", [])[i]
+            precip_sum = daily.get("precipitation_sum", [])[i]
+            precip_prob = daily.get("precipitation_probability_max", [])[i]
+            wind = daily.get("wind_speed_10m_max", [])[i]
+            weather_code = daily.get("weather_code", [])[i] if i < len(daily.get("weather_code", [])) else 0
+            
+            # Weather description based on code
+            weather_desc = WeatherService._get_weather_description(weather_code)
+            
+            report += f"{date}:\n"
+            report += f"  Temperature: {min_temp}°C - {max_temp}°C\n"
+            report += f"  Weather: {weather_desc}\n"
+            report += f"  Precipitation: {precip_sum}mm (Probability: {precip_prob}%)\n"
+            report += f"  Wind: {wind} km/h\n\n"
+        
+        return report
+    
+    @staticmethod
+    def _get_weather_description(weather_code: int) -> str:
+        """
+        Get weather description from weather code
+        
+        :param weather_code: WMO weather code
+        :return: weather description
+        """
+        if weather_code == 0:
+            return "Clear sky"
+        elif weather_code in [1, 2, 3]:
+            return "Partly cloudy"
+        elif weather_code in [45, 48]:
+            return "Foggy"
+        elif weather_code in [51, 53, 55]:
+            return "Drizzle"
+        elif weather_code in [61, 63, 65]:
+            return "Rain"
+        elif weather_code in [71, 73, 75]:
+            return "Snow"
+        elif weather_code in [80, 81, 82]:
+            return "Rain showers"
+        elif weather_code in [95, 96, 99]:
+            return "Thunderstorm"
+        else:
+            return "Unknown"
+    
+    @staticmethod
     def _score_weather_days(daily: Dict) -> List[Dict]:
         """
         Score weather days based on conditions
@@ -198,8 +304,8 @@ class WeatherService(BaseService):
             score -= TEMPERATURE_THRESHOLDS["moderate"]["penalty"]
         
         # Precipitation penalty
-        score -= min(50.0, precip_sum * 10.0)  # Up to 50 points off for heavy rain
-        score -= min(30.0, precip_prob / 2.0)  # Up to 30 points off for high probability
+        score -= precip_sum * 10.0  # Heavy penalty for rain
+        score -= precip_prob / 2.0  # Lighter penalty for rain probability
         
         # Wind penalty
         if wind > WIND_THRESHOLDS["severe"]["speed"]:
@@ -215,26 +321,31 @@ class WeatherService(BaseService):
         elif weather_code >= WEATHER_CODE_PENALTIES["drizzle"]["min"]:
             score -= WEATHER_CODE_PENALTIES["drizzle"]["penalty"]
         
-        return int(max(0.0, score))  # Convert back to int for return
+        return int(max(0.0, score))
 
     @staticmethod
     def _format_trip_recommendations(location: str, days: List[Dict]) -> str:
         """
-        Format trip recommendations based on scored days
+        Format trip recommendations based on weather scores
         
         :param location: location name
         :param days: list of scored days
-        :return: formatted recommendations
+        :return: formatted trip recommendations
         """
-        result = f"Best days for a trip to {location} in the next week:\n"
-        for i, day in enumerate(days[:MAX_DISPLAY_DAYS]):
-            result += f"{i+1}. {day["date"]}: Score {day["score"]}/100, Max temp: {day["max_temp"]}°C, Precipitation: {day["precip"]}mm\n"
+        report = f"Best trip days for {location} (next 7 days):\n\n"
         
-        result += "\nDays to avoid:\n"
-        for day in days[-2:]:
-            result += f"{day["date"]}: Score {day["score"]}/100, Max temp: {day["max_temp"]}°C, Precipitation: {day["precip"]}mm\n"
+        for i, day in enumerate(days[:5], 1):  # Show top 5 days
+            date = day["date"]
+            score = day["score"]
+            max_temp = day["max_temp"]
+            precip = day["precip"]
+            
+            quality = "Excellent" if score >= 80 else "Good" if score >= 60 else "Fair" if score >= 40 else "Poor"
+            
+            report += f"{i}. {date} - {quality} (Score: {score}/100)\n"
+            report += f"   Max Temperature: {max_temp}°C, Precipitation: {precip}mm\n\n"
         
-        return result
+        return report
 
     @staticmethod
     def _detect_severe_weather_events(hourly: Dict) -> List[Dict]:
@@ -245,27 +356,30 @@ class WeatherService(BaseService):
         :return: list of weather events
         """
         events = []
+        times = hourly.get("time", [])
+        temperatures = hourly.get("temperature_2m", [])
+        precipitation = hourly.get("precipitation", [])
+        wind_speeds = hourly.get("wind_speed_10m", [])
+        weather_codes = hourly.get("weather_code", [])
         
-        # Check hourly data for events
-        for i in range(len(hourly.get("time", []))):
-            time = hourly.get("time", [])[i]
-            precip = hourly.get("precipitation", [])[i]
-            weather_code = hourly.get("weather_code", [])[i]
-            wind_speed = hourly.get("wind_speed_10m", [])[i]
+        for i in range(len(times)):
+            time = times[i]
+            temp = temperatures[i] if i < len(temperatures) else 0
+            precip = precipitation[i] if i < len(precipitation) else 0
+            wind_speed = wind_speeds[i] if i < len(wind_speeds) else 0
+            weather_code = weather_codes[i] if i < len(weather_codes) else 0
             
-            # Check for heavy rain
+            # Check for severe weather conditions
             if precip >= PRECIPITATION_THRESHOLDS["heavy_rain"]:
-                events.append({"time": time, "event": "Heavy Rain", "value": f"{precip}mm/h"})
+                events.append({"time": time, "type": "Heavy Rain", "value": f"{precip}mm"})
             
-            # Check for strong winds
             if wind_speed >= PRECIPITATION_THRESHOLDS["strong_winds"]:
-                events.append({"time": time, "event": "Strong Winds", "value": f"{wind_speed}km/h"})
+                events.append({"time": time, "type": "Strong Winds", "value": f"{wind_speed}km/h"})
             
-            # Check for severe weather codes
             if weather_code >= SEVERE_WEATHER_CODES["thunderstorm"]:
-                events.append({"time": time, "event": "Thunderstorm", "value": f"Weather code {weather_code}"})
+                events.append({"time": time, "type": "Thunderstorm", "value": "Severe"})
             elif weather_code >= SEVERE_WEATHER_CODES["snow"]:
-                events.append({"time": time, "event": "Snow", "value": f"Weather code {weather_code}"})
+                events.append({"time": time, "type": "Snow", "value": "Heavy"})
         
         return events
 
@@ -276,25 +390,18 @@ class WeatherService(BaseService):
         
         :param location: location name
         :param events: list of weather events
-        :return: formatted events report
+        :return: formatted weather events report
         """
         if not events:
-            return f"No severe weather events predicted for {location} in the next {DEFAULT_FORECAST_DAYS} days."
+            return f"No severe weather events expected for {location} in the next {DEFAULT_FORECAST_DAYS} days."
         
-        result = f"Severe weather events for {location} in the next {DEFAULT_FORECAST_DAYS} days:\n"
+        report = f"Severe weather events for {location}:\n\n"
         
-        # Group events by day for better readability
-        events_by_day = {}
         for event in events:
-            day = event["time"].split("T")[0]
-            if day not in events_by_day:
-                events_by_day[day] = []
-            events_by_day[day].append(event)
+            time = event["time"]
+            event_type = event["type"]
+            value = event["value"]
+            
+            report += f"⚠️  {time}: {event_type} ({value})\n"
         
-        for day, day_events in events_by_day.items():
-            result += f"\n{day}:\n"
-            for event in day_events:
-                time = event["time"].split("T")[1]
-                result += f"  {time}: {event["event"]} - {event["value"]}\n"
-        
-        return result
+        return report

@@ -6,7 +6,6 @@ server = FastMCP("Trip Planner Server")
 
 # Initialize the trip planner service with API keys from environment
 trip_planner_service = TripPlannerService(
-    weather_api_key=None,  # Weather service doesn't require API key for basic functionality
     places_api_key=os.getenv("GOOGLE_PLACES_API_KEY"),
     booking_api_key=os.getenv("BOOKING_API_KEY")
 )
@@ -18,7 +17,6 @@ def plan_complete_trip(
     duration: str = "3",
     trip_style: str = "balanced",
     budget: str = "mid_range",
-    weather_preference: str = None,
     include_accommodation: bool = True
 ) -> str:
     """
@@ -29,7 +27,6 @@ def plan_complete_trip(
     :param duration: trip duration as number of days or preset (weekend, short, week, extended, month)
     :param trip_style: trip style (relaxed, balanced, adventure, cultural, food_focused)
     :param budget: budget category (budget, mid_range, luxury)
-    :param weather_preference: preferred weather condition for automatic date selection
     :param include_accommodation: whether to include accommodation suggestions
     :return: comprehensive trip plan with daily itinerary and accommodation
     """
@@ -47,7 +44,6 @@ def plan_complete_trip(
         duration=duration,
         trip_style=trip_style,
         budget=budget,
-        weather_preference=weather_preference,
         include_accommodation=include_accommodation
     )
 
