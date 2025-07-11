@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   booking:
@@ -9,9 +9,7 @@ services:
       - "5001:5001"
     volumes:
       - .:/app
-    environment:
-      - FLASK_ENV=development
-
+      -
   places:
     build:
       context: .
@@ -20,8 +18,6 @@ services:
       - "5002:5002"
     volumes:
       - .:/app
-    environment:
-      - FLASK_ENV=development
 
   trip_planner:
     build:
@@ -31,8 +27,6 @@ services:
       - "5003:5003"
     volumes:
       - .:/app
-    environment:
-      - FLASK_ENV=development
 
   weather:
     build:
@@ -42,5 +36,3 @@ services:
       - "5004:5004"
     volumes:
       - .:/app
-    environment:
-      - FLASK_ENV=development
