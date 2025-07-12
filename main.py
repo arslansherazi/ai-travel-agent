@@ -1,23 +1,24 @@
 import os
 
-import panel as pn
-
 from agents import Runner
 from agents.mcp import MCPServerSse
 from dotenv import load_dotenv
-from _agents.weather import setup_weather_agent
-from _agents.booking import setup_booking_agent, weather_agent, booking_agent
-from _agents.places import setup_places_agent, places_agent
-from _agents.planner import setup_planner_agent, planner_agent
+import panel as pn
+
+from _agents.booking import booking_agent
+from _agents.places import places_agent
+from _agents.planner import planner_agent
+from _agents.weather import weather_agent
 
 load_dotenv()
 
 
 async def process_user_query(_input: str):
     """
-    Set up agents for UI mode
+    Processes user query and fetch the response from agents
+
+    :param _input: User query string
     """
-    # Initialize all agents
     try:
         async with (
             MCPServerSse(name="Booking", params={"url": os.getenv("BOOKING_SERVER_URL")}) as booking_server,
@@ -41,9 +42,6 @@ async def process_user_query(_input: str):
             return result
     except Exception as e:
         return f"Something went wrong. Please try again with a different request. Error: {str(e)}"
-
-
-
 def run():
     """
     Run the application with Panel UI
@@ -52,7 +50,7 @@ def run():
 
     # Create the chat interface
     chat_interface = pn.chat.ChatInterface(
-        callback=process_message,
+        callback=process_user_query,
         callback_user="Travel Assistant",
         show_rerun=False,
         show_undo=False,
