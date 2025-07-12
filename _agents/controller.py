@@ -1,5 +1,7 @@
 from agents import Agent
 
+from guardrails.query_filter import travel_query_guardrail
+
 INSTRUCTIONS = """
 You are the central controller agent for a travel assistant system.
 
@@ -35,5 +37,6 @@ Use this transfer phrase when handing off:
 controller_agent = Agent(
     name="controller_agent",
     instructions=INSTRUCTIONS,
-    handoff_description=HANDOFF_DESCRIPTION
+    handoff_description=HANDOFF_DESCRIPTION,
+    input_guardrails=[travel_query_guardrail]
 )

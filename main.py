@@ -1,6 +1,6 @@
 import os
 
-from agents import Runner
+from agents import Runner, InputGuardrailTripwireTriggered
 from agents.mcp import MCPServerSse
 from dotenv import load_dotenv
 import panel as pn
@@ -42,6 +42,8 @@ async def process_user_query(_input: str):
 
             result = await Runner.run(starting_agent=controller_agent, input=_input)
             return result.final_output
+    except InputGuardrailTripwireTriggered:
+        return "I'm sorry, I can only assist with travel‑related questions. Please ask me about weather, accommodations, places, or trip planning."
     except Exception as e:
         return f"Something went wrong. Please try again with a different request. Error: {str(e)}"
 def run():
