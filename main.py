@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 import panel as pn
 
 from _agents.booking import booking_agent
+from _agents.controller import controller_agent
 from _agents.places import places_agent
 from _agents.planner import planner_agent
 from _agents.weather import weather_agent
@@ -29,17 +30,18 @@ async def process_user_query(_input: str):
             # Setup servers
             booking_agent.server = booking_server
             places_agent.server = places_server
-            weather_agent.server = weather_server
             planner_agent.server = planner_server
+            weather_agent.server = weather_server
 
-            # Set up handoffs between agents
-            booking_agent.handoffs = [weather_agent, places_agent, planner_agent]
-            places_agent.handoffs = [weather_agent, booking_agent, planner_agent]
-            planner_agent.handoffs = [weather_agent, booking_agent, places_agent]
-            weather_agent.handoffs = [booking_agent, places_agent, planner_agent]
+            # Handoff
+            booking_agent.handoffs = [controller_agent]
+            places_agent.handoffs = [controller_agent]
+            planner_agent.handoffs = [controller_agent]
+            weather_agent.handoffs = [controller_agent]
+            controller_agent.handoffs = [booking_agent, places_agent, planner_agent, weather_agent]
 
-            result = await Runner.run(starting_agent=weather_agent, input=_input)
-            return result
+            result = await Runner.run(starting_agent=controller_agent, input=_input)
+            return result.final_output
     except Exception as e:
         return f"Something went wrong. Please try again with a different request. Error: {str(e)}"
 def run():
