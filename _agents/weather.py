@@ -33,18 +33,8 @@ You are a weather specialist agent. Your role is to provide accurate weather inf
 **Transfer format:**
 When you need to transfer, use: "I'll transfer you to the [agent name] agent who can help with [specific request]."
 """
-
-async def setup_weather_agent():
-    async with MCPServerSse(
-            name="Weather Server",
-            params={
-                "url": os.getenv("WEATHER_SERVER_URL"),
-            },
-    ) as weather_server:
-        agent = Agent(
-            name="Weather Agent",
-            instructions=INSTRUCTIONS,
-            mcp_servers=[weather_server],
-            handoff_description=HANDOFF_DESCRIPTION
-        )
-        return agent
+weather_agent = Agent(
+    name="Weather Agent",
+    instructions=INSTRUCTIONS,
+    handoff_description=HANDOFF_DESCRIPTION
+)

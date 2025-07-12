@@ -34,18 +34,8 @@ You are a places and attractions specialist agent. Your role is to help users di
 **Transfer format:**
 When you need to transfer, use: "I'll transfer you to the [agent name] agent who can help with [specific request]."
 """
-
-async def setup_places_agent():
-    async with MCPServerSse(
-            name="Places Server",
-            params={
-                "url": os.getenv("PLACES_SERVER_URL"),
-            },
-    ) as places_server:
-        agent = Agent(
-            name="Places Agent",
-            instructions=INSTRUCTIONS,
-            mcp_servers=[places_server],
-            handoff_description=HANDOFF_DESCRIPTION
-        )
-        return agent
+places_agent = Agent(
+    name="Places Agent",
+    instructions=INSTRUCTIONS,
+    handoff_description=HANDOFF_DESCRIPTION
+)

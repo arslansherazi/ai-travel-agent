@@ -1,5 +1,5 @@
 from fastmcp import FastMCP
-from mcp.servers.places.service import PlacesService
+from _mcp.servers.places.service import PlacesService
 import os
 
 server = FastMCP("Places Server")

@@ -1,5 +1,5 @@
 from fastmcp import FastMCP
-from mcp.servers.booking.service import BookingService
+from _mcp.servers.booking.service import BookingService
 import os
 
 server = FastMCP("Booking Server")

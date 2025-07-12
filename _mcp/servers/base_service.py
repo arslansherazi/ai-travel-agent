@@ -4,7 +4,7 @@ import requests
 from typing import Tuple, Optional, Dict, Any
 from abc import ABC
 
-from mcp.servers.constants import GEOCODING_API_URL, DEFAULT_TIMEOUT
+from _mcp.servers.constants import GEOCODING_API_URL, DEFAULT_TIMEOUT
 
 
 class BaseService(ABC):

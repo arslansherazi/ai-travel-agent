@@ -1,5 +1,5 @@
 from fastmcp import FastMCP
-from mcp.servers.weather.service import WeatherService
+from _mcp.servers.weather.service import WeatherService
 
 server = FastMCP("Weather Server")
 

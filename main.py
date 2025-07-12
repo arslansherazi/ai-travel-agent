@@ -1,47 +1,47 @@
+import os
+
 import panel as pn
 
 from agents import Runner
+from agents.mcp import MCPServerSse
 from dotenv import load_dotenv
 from _agents.weather import setup_weather_agent
-from _agents.booking import setup_booking_agent
-from _agents.places import setup_places_agent
-from _agents.planner import setup_planner_agent
+from _agents.booking import setup_booking_agent, weather_agent, booking_agent
+from _agents.places import setup_places_agent, places_agent
+from _agents.planner import setup_planner_agent, planner_agent
 
 load_dotenv()
 
 
-async def setup_agents():
+async def process_user_query(_input: str):
     """
     Set up agents for UI mode
     """
     # Initialize all agents
-    weather_agent = await setup_weather_agent()
-    booking_agent = await setup_booking_agent()
-    places_agent = await setup_places_agent()
-    planner_agent = await setup_planner_agent()
-
-    # Set up handoffs between agents
-    weather_agent.handoffs = [booking_agent, places_agent, planner_agent]
-    booking_agent.handoffs = [weather_agent, places_agent, planner_agent]
-    places_agent.handoffs = [weather_agent, booking_agent, planner_agent]
-    planner_agent.handoffs = [weather_agent, booking_agent, places_agent]
-
-    return weather_agent
-
-
-async def process_message(_input: str):
-    """
-    Process user message with agents and return response
-
-    :param _input: user message
-    """
-    weather_agent = await setup_agents()
-
     try:
-        response = await Runner.run(starting_agent=weather_agent, input=_input)
-        return response
+        async with (
+            MCPServerSse(name="Booking", params={"url": os.getenv("BOOKING_SERVER_URL")}) as booking_server,
+            MCPServerSse(name="Places", params={"url": os.getenv("PLACES_SERVER_URL")}) as places_server,
+            MCPServerSse(name="Planner", params={"url": os.getenv("PLANNER_SERVER_URL")}) as planner_server,
+            MCPServerSse(name="Weather", params={"url": os.getenv("WEATHER_SERVER_URL")}) as weather_server
+        ):
+            # Setup servers
+            booking_agent.server = booking_server
+            places_agent.server = places_server
+            weather_agent.server = weather_server
+            planner_agent.server = planner_server
+
+            # Set up handoffs between agents
+            booking_agent.handoffs = [weather_agent, places_agent, planner_agent]
+            places_agent.handoffs = [weather_agent, booking_agent, planner_agent]
+            planner_agent.handoffs = [weather_agent, booking_agent, places_agent]
+            weather_agent.handoffs = [booking_agent, places_agent, planner_agent]
+
+            result = await Runner.run(starting_agent=weather_agent, input=_input)
+            return result
     except Exception as e:
         return f"Something went wrong. Please try again with a different request. Error: {str(e)}"
+
 
 
 def run():

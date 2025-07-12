@@ -4,8 +4,8 @@ Booking service module containing the BookingService utils
 
 from typing import Tuple, Dict, Optional, Union
 from datetime import datetime, timedelta
-from mcp.servers.base_service import BaseService
-from mcp.servers.booking.constants import (
+from _mcp.servers.base_service import BaseService
+from _mcp.servers.booking.constants import (
     BOOKING_API_BASE_URL,
     ENDPOINTS,
     SEARCH_EXTRAS,

@@ -4,7 +4,7 @@ services:
   booking:
     build:
       context: .
-      dockerfile: mcp/servers/booking/Dockerfile
+      dockerfile: _mcp/servers/booking/Dockerfile
     ports:
       - "5001:5001"
     volumes:
@@ -13,7 +13,7 @@ services:
   places:
     build:
       context: .
-      dockerfile: mcp/servers/places/Dockerfile
+      dockerfile: _mcp/servers/places/Dockerfile
     ports:
       - "5002:5002"
     volumes:
@@ -22,7 +22,7 @@ services:
   trip_planner:
     build:
       context: .
-      dockerfile: mcp/servers/trip_planner/Dockerfile
+      dockerfile: _mcp/servers/trip_planner/Dockerfile
     ports:
       - "5003:5003"
     volumes:
@@ -31,7 +31,7 @@ services:
   weather:
     build:
       context: .
-      dockerfile: mcp/servers/weather/Dockerfile
+      dockerfile: _mcp/servers/weather/Dockerfile
     ports:
       - "5004:5004"
     volumes:

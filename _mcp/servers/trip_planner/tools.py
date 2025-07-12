@@ -1,5 +1,5 @@
 from fastmcp import FastMCP
-from mcp.servers.trip_planner.service import TripPlannerService
+from _mcp.servers.trip_planner.service import TripPlannerService
 import os
 
 server = FastMCP("Trip Planner Server")

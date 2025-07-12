@@ -4,8 +4,8 @@ Places service module containing the PlacesService utils
 
 import math
 from typing import List, Dict, Optional, Union, Tuple
-from mcp.servers.base_service import BaseService
-from mcp.servers.places.constants import (
+from _mcp.servers.base_service import BaseService
+from _mcp.servers.places.constants import (
     GOOGLE_PLACES_API_BASE_URL,
     ENDPOINTS,
     PLACE_TYPES,

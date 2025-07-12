@@ -35,18 +35,8 @@ You are a comprehensive trip planning specialist agent. Your role is to create d
 **Transfer format:**
 When you need to transfer, use: "I'll transfer you to the [agent name] agent who can help with [specific request]."
 """
-
-async def setup_planner_agent():
-    async with MCPServerSse(
-            name="Trip Planner Server",
-            params={
-                "url": os.getenv("PLANNER_SERVER_URL"),
-            },
-    ) as planner_server:
-        agent = Agent(
-            name="Trip Planner Agent",
-            instructions=INSTRUCTIONS,
-            mcp_servers=[planner_server],
-            handoff_description=HANDOFF_DESCRIPTION
-        )
-        return agent
+planner_agent = Agent(
+    name="Trip Planner Agent",
+    instructions=INSTRUCTIONS,
+    handoff_description=HANDOFF_DESCRIPTION
+)

@@ -3,8 +3,8 @@ Weather service module containing the WeatherService utils
 """
 
 from typing import List, Dict, Optional
-from mcp.servers.base_service import BaseService
-from mcp.servers.weather.constants import (
+from _mcp.servers.base_service import BaseService
+from _mcp.servers.weather.constants import (
     WEATHER_API_BASE_URL,
     CURRENT_WEATHER_PARAMS,
     DAILY_FORECAST_PARAMS,

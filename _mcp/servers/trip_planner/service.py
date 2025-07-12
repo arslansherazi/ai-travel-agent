@@ -4,11 +4,11 @@ Trip planner service module containing the TripPlannerService class
 
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Union, Tuple
-from mcp.servers.base_service import BaseService
-from mcp.servers.weather.service import WeatherService
-from mcp.servers.places.service import PlacesService
-from mcp.servers.booking.service import BookingService
-from mcp.servers.trip_planner.constants import (
+from _mcp.servers.base_service import BaseService
+from _mcp.servers.weather.service import WeatherService
+from _mcp.servers.places.service import PlacesService
+from _mcp.servers.booking.service import BookingService
+from _mcp.servers.trip_planner.constants import (
     TRIP_DURATIONS,
     DEFAULT_TRIP_DURATION,
     MIN_TRIP_DURATION,
