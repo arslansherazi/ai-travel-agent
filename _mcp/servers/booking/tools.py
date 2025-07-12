@@ -11,9 +11,9 @@ def search_availability(
     location: str,
     checkin: str,
     checkout: str,
-    adults: int = 2,
+    adults: int = 1,
     rooms: int = 1,
-    rows: int = 20
+    rows: int = 5
 ) -> str:
     """
     Search for accommodation availability based on location and dates
@@ -38,7 +38,7 @@ def search_specific_accommodations(
     price_min: float = None,
     price_max: float = None,
     accommodation_type: str = None,
-    adults: int = 2,
+    adults: int = 1,
     rooms: int = 1,
     rows: int = 20
 ) -> str:
