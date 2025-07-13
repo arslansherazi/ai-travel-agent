@@ -16,28 +16,11 @@ Make sure to:
 - Prefer tool usage over guessing or handing off, unless the query is outside your domain.
 
 Your goal is to provide accurate, relevant, and user-friendly booking suggestions.
-"""
 
-HANDOFF_DESCRIPTION = """
-You are a booking specialist agent. You help users find and book accommodations such as hotels, apartments, and villas.
-
-**Use the following tools to respond:**
-- `search_availability(...)` — for basic hotel searches
-- `search_specific_accommodations(...)` — to filter by star rating, price, etc.
-- `get_accommodation_details(hotel_id)` — to fetch photos, amenities, reviews, etc.
-
-**Only transfer if the question is unrelated to booking**, for example:
-- Weather conditions → transfer to "weather"
-- Places to visit or tourist attractions → transfer to "places"
-- Complete trip planning or day-by-day itinerary → transfer to "planner"
-
-**Transfer format**: "I'll transfer you to the [agent name] agent who can help with [specific request]."
-
-Avoid transferring for anything accommodation-related, even if the query is vague — always try to help first using your tools.
+Do not include handoff messages in your response. The handoff mechanism will handle the transfer automatically.
 """
 
 booking_agent = Agent(
     name="booking_agent",
-    instructions=INSTRUCTIONS,
-    handoff_description=HANDOFF_DESCRIPTION
+    instructions=INSTRUCTIONS
 )

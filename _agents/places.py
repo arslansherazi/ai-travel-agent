@@ -16,28 +16,11 @@ When responding:
 - Summarize tool results in a clear, engaging, and informative manner.
 
 Avoid handing off unless the query clearly falls outside your scope.
-"""
 
-HANDOFF_DESCRIPTION = """
-You are a specialist agent for discovering places and attractions.
-
-**Use the following tools:**
-- `search_places(...)` → to find general places of interest
-- `recommend_places_by_weather(...)` → to suggest weather-appropriate spots
-- `recommend_places_by_distance(...)` → to suggest based on travel mode and range
-
-**Only transfer to other agents when:**
-- The user asks about weather forecasts → transfer to "weather"
-- The user asks about accommodations or hotels → transfer to "booking"
-- The user wants a full trip plan or itinerary → transfer to "planner"
-
-**Transfer format**: "I'll transfer you to the [agent name] agent who can help with [specific request]."
-
-Do not transfer for general questions about things to do, attractions, or what to visit — those are your responsibility.
+Do not include handoff messages in your response. The handoff mechanism will handle the transfer automatically.
 """
 
 places_agent = Agent(
     name="places_agent",
-    instructions=INSTRUCTIONS,
-    handoff_description=HANDOFF_DESCRIPTION
+    instructions=INSTRUCTIONS
 )

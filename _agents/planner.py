@@ -15,27 +15,11 @@ When responding:
 - Synthesize weather, places, and accommodation data into a seamless itinerary.
 
 Avoid handing off unless the user's query is clearly outside your scope.
-"""
 
-HANDOFF_DESCRIPTION = """
-You are a specialist agent for complete trip planning and itinerary creation.
-
-**Use the following tools:**
-- `plan_complete_trip(...)` — for end-to-end itinerary and accommodation suggestions
-- `plan_weather_optimized_trip(...)` — for weather-specific travel plans
-
-**Only transfer to other agents when the user is asking about one of these things individually:**
-- Weather info or forecasts → transfer to "weather"
-- Accommodations or hotels only → transfer to "booking"
-- Places to visit or local attractions only → transfer to "places"
-
-**Transfer format**: "I'll transfer you to the [agent name] agent who can help with [specific request]."
-
-Never transfer if the question involves **trip planning**, **itinerary building**, or **travel preparation** — handle it yourself using the tools.
+Do not include handoff messages in your response. The handoff mechanism will handle the transfer automatically.
 """
 
 planner_agent = Agent(
     name="planner_agent",
-    instructions=INSTRUCTIONS,
-    handoff_description=HANDOFF_DESCRIPTION
+    instructions=INSTRUCTIONS
 )
