@@ -9,4 +9,4 @@ COPY . .
 
 EXPOSE 5002
 
-CMD ["python", "-m", "mcp.servers.places.server"]
+CMD ["python", "-m", "_mcp.servers.places.server"]

@@ -71,4 +71,4 @@ def get_accommodation_details(hotel_id: str) -> str:
     :param hotel_id: unique hotel identifier from search results
     :return: detailed accommodation information including photos, reviews, contact info, amenities, and booking URL
     """
-    return booking_service.get_accommodation_details(hotel_id) 
+    return booking_service.get_accommodation_details(hotel_id)

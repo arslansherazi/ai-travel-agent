@@ -9,4 +9,4 @@ COPY . .
 
 EXPOSE 5003
 
-CMD ["python", "-m", "mcp.servers.trip_planner.server"]
+CMD ["python", "-m", "_mcp.servers.trip_planner.server"]

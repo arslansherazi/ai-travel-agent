@@ -9,4 +9,4 @@ COPY . .
 
 EXPOSE 5004
 
-CMD ["python", "-m", "mcp.servers.weather.server"]
+CMD ["python", "-m", "_mcp.servers.weather.server"]

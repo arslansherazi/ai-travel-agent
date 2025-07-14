@@ -1,6 +1,6 @@
 import os
 
-from agents import Runner, InputGuardrailTripwireTriggered
+from agents import Runner, InputGuardrailTripwireTriggered, gen_trace_id, trace
 from agents.mcp import MCPServerSse
 from dotenv import load_dotenv
 import panel as pn
@@ -27,26 +27,33 @@ async def process_user_query(_input: str):
             MCPServerSse(name="Planner", params={"url": os.getenv("PLANNER_SERVER_URL")}) as planner_server,
             MCPServerSse(name="Weather", params={"url": os.getenv("WEATHER_SERVER_URL")}) as weather_server
         ):
+            trace_id = gen_trace_id()
+            with trace(workflow_name="SSE Example", trace_id=trace_id):
+                print(f"View trace: https://platform.openai.com/traces/trace?trace_id={trace_id}\n")
+
+                
             # Setup servers for all agents
             booking_agent.server = booking_server
             places_agent.server = places_server
             planner_agent.server = planner_server
             weather_agent.server = weather_server
-
-            # Simple routing logic - start with weather agent for weather queries
-            weather_keywords = ['weather', 'temperature', 'forecast', 'rain', 'snow', 'sunny', 'cloudy']
-            if any(keyword in _input.lower() for keyword in weather_keywords):
-                result = await Runner.run(starting_agent=weather_agent, input=_input)
-            else:
-                # Use controller for other queries
-                controller_agent.handoffs = [weather_agent, booking_agent, places_agent, planner_agent]
-                result = await Runner.run(starting_agent=controller_agent, input=_input)
+            
+            # Use controller for other queries
+            controller_agent.handoffs = [weather_agent, booking_agent, places_agent, planner_agent]
+            weather_agent.handoffs = [controller_agent]
+            booking_agent.handoffs = [controller_agent]
+            places_agent.handoffs = [controller_agent]
+            planner_agent.handoffs = [controller_agent]
+            
+            result = await Runner.run(starting_agent=controller_agent, input=_input)
             
             return result.final_output
     except InputGuardrailTripwireTriggered:
         return "I'm sorry, I can only assist with travel‑related questions. Please ask me about weather, accommodations, places, or trip planning."
     except Exception as e:
         return f"Something went wrong. Please try again with a different request. Error: {str(e)}"
+    
+    
 def run():
     """
     Run the application with Panel UI
@@ -74,7 +81,8 @@ def run():
         pn.pane.Markdown("# 🌍 AI Travel Assistant", align="center"),
         chat_interface,
         width=800,
-        sizing_mode="stretch_width"
+        height=800,
+        sizing_mode="stretch_both"
     )
 
     # Serve the app
