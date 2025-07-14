@@ -33,7 +33,7 @@ class WeatherService(BaseService):
         """
         lat, lon = self.get_coordinates(location)
         if not lat or not lon:
-            return f"Could not find coordinates for {location}"
+            return f"Could not find coordinates for {location}. Check your location name."
         
         # Get current weather data
         params = {
