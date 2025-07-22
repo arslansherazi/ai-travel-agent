@@ -1,6 +1,6 @@
 import os
 
-from agents import Runner, InputGuardrailTripwireTriggered, gen_trace_id, trace
+from agents import Runner, InputGuardrailTripwireTriggered, SQLiteSession
 from agents.mcp import MCPServerSse
 from dotenv import load_dotenv
 import panel as pn
@@ -13,6 +13,9 @@ from _agents.weather import weather_agent
 
 load_dotenv()
 
+# Global session for conversation continuity
+conversation_session = None
+
 
 async def process_user_query(_input: str):
     """
@@ -20,6 +23,12 @@ async def process_user_query(_input: str):
 
     :param _input: User query string
     """
+    global conversation_session
+    
+    # Initialize session if not exists
+    if conversation_session is None:
+        conversation_session = SQLiteSession("travel_assistant_conversation")
+    
     try:
         async with (
             MCPServerSse(name="Booking", params={"url": os.getenv("BOOKING_SERVER_URL")}) as booking_server,
@@ -27,11 +36,6 @@ async def process_user_query(_input: str):
             MCPServerSse(name="Planner", params={"url": os.getenv("PLANNER_SERVER_URL")}) as planner_server,
             MCPServerSse(name="Weather", params={"url": os.getenv("WEATHER_SERVER_URL")}) as weather_server
         ):
-            trace_id = gen_trace_id()
-            with trace(workflow_name="SSE Example", trace_id=trace_id):
-                print(f"View trace: https://platform.openai.com/traces/trace?trace_id={trace_id}\n")
-
-                
             # Setup servers for all agents
             booking_agent.server = booking_server
             places_agent.server = places_server
@@ -45,7 +49,12 @@ async def process_user_query(_input: str):
             places_agent.handoffs = [controller_agent]
             planner_agent.handoffs = [controller_agent]
             
-            result = await Runner.run(starting_agent=controller_agent, input=_input)
+            # Run with session for automatic conversation memory
+            result = await Runner.run(
+                starting_agent=controller_agent, 
+                input=_input,
+                session=conversation_session  # Use session for automatic conversation history
+            )
             
             return result.final_output
     except InputGuardrailTripwireTriggered:
