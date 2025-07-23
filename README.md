@@ -87,25 +87,6 @@ Then enter natural language requests like:
 - "Show me attractions in London"
 - "Plan a 3-day trip to New York"
 
-### Programmatic Usage
-
-```python
-import asyncio
-from _agents.controller import travel_controller
-
-async def example():
-    # Initialize the controller
-    await travel_controller.initialize()
-    
-    # Process a request
-    response = await travel_controller.process_request(
-        "Plan a weekend trip to Barcelona"
-    )
-    print(response)
-
-asyncio.run(example())
-```
-
 ## Agent Capabilities
 
 ### Weather Agent
