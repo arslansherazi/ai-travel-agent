@@ -35,3 +35,11 @@ services:
       - "5004:5004"
     volumes:
       - .:/app
+
+  main:
+    build:
+      context: .
+    ports:
+      - "7860:7860"
+    volumes:
+      - .:/app

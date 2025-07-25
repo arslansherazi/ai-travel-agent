@@ -27,3 +27,8 @@ pip install -r requirements.txt
 docker-compose up
 ~~~
 
+## Check Logs
+~~~
+https://platform.openai.com/logs
+~~~
+
