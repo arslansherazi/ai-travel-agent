@@ -2,7 +2,6 @@
 
 # API URLs
 BOOKING_API_BASE_URL = "https://demandapi.booking.com/3.1"
-BOOKING_API_SANDBOX_URL = "https://demandapi-sandbox.booking.com/3.1"
 
 # API Endpoints
 ENDPOINTS = {

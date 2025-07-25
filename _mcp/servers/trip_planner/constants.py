@@ -138,17 +138,17 @@ SEASONAL_ACTIVITIES = {
 
 # Trip planning priorities
 PLANNING_PRIORITIES = {
-    "weather_weight": 0.4,
-    "distance_weight": 0.3,
-    "rating_weight": 0.2,
+    "weather_weight": 0.5,
+    "distance_weight": 0.4,
     "budget_weight": 0.1
+    # Note: rating_weight removed - Photon API doesn't provide ratings
 }
 
 # Accommodation search parameters
 ACCOMMODATION_SEARCH = {
     "search_radius": 5000,  # 5 km from city center
-    "min_rating": 3.5,
     "nights_offset": 0  # How many days before trip to search
+    # Note: min_rating removed - using booking service ratings instead
 }
 
 # Default values

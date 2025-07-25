@@ -29,17 +29,15 @@ class TripPlannerService(BaseService):
     
     def __init__(
         self,
-        places_api_key: Optional[str] = None,
         booking_api_key: Optional[str] = None
     ):
         """
         Initialize the trip planner service
 
-        :param places_api_key: Google Places API key
         :param booking_api_key: Booking.com API key
         """
         self.weather_service = WeatherService()
-        self.places_service = PlacesService(api_key=places_api_key)
+        self.places_service = PlacesService()  # Photon API doesn't need API key
         self.booking_service = BookingService(api_key=booking_api_key)
     
     def plan_trip(
@@ -502,7 +500,7 @@ class TripPlannerService(BaseService):
         try:
             # Search for places of this type using the data method
             places_data = self.places_service.search_places_data(
-                (lat, lng), activity_type, radius, 5, 3.5
+                (lat, lng), activity_type, radius, 5, "en"
             )
             
             if isinstance(places_data, str) or not places_data:  # Error or no results
@@ -510,15 +508,29 @@ class TripPlannerService(BaseService):
             
             # Use the first result
             place = places_data[0]
+            properties = place.get("properties", {})
+            
+            # Build address from Photon API data
+            address_parts = []
+            if properties.get("street"):
+                if properties.get("housenumber"):
+                    address_parts.append(f"{properties['housenumber']} {properties['street']}")
+                else:
+                    address_parts.append(properties["street"])
+            if properties.get("city"):
+                address_parts.append(properties["city"])
+            if properties.get("country"):
+                address_parts.append(properties["country"])
+            
+            address = ", ".join(address_parts) if address_parts else "Address not available"
             
             return {
                 "type": activity_type,
                 "time": time_period,
-                "name": place.get("name", f"Sample {activity_type.replace('_', ' ').title()}"),
-                "rating": place.get("rating", 0),
-                "address": place.get("vicinity", "Address not available"),
-                "place_id": place.get("place_id", ""),
-                "price_level": place.get("price_level", 0)
+                "name": properties.get("name", f"Sample {activity_type.replace('_', ' ').title()}"),
+                "address": address,
+                "osm_id": properties.get("osm_id", ""),
+                "distance": place.get("distance_km", 0)
             }
             
         except Exception:
@@ -621,7 +633,8 @@ class TripPlannerService(BaseService):
                     time_emoji = {"morning": "🌅", "afternoon": "☀️", "evening": "🌙"}.get(activity.get('time', ''), "📍")
                     result += f"  {time_emoji} {activity.get('name', 'Activity')}\n"
                     result += f"     Type: {activity.get('type', 'N/A').replace('_', ' ').title()}\n"
-                    result += f"     Rating: {activity.get('rating', 'N/A')}/5.0\n"
+                    if activity.get('distance'):
+                        result += f"     Distance: {activity.get('distance')} km\n"
                     if activity.get('address'):
                         result += f"     Address: {activity['address']}\n"
                     result += "\n"
@@ -676,7 +689,9 @@ class TripPlannerService(BaseService):
                     result += f"  {time_emoji} {activity.get('name', 'Activity')}\n"
                     result += f"     Perfect for {weather_condition} weather\n"
                     result += f"     Type: {activity.get('type', 'N/A').replace('_', ' ').title()}\n"
-                    result += f"     Rating: {activity.get('rating', 'N/A')}/5.0\n\n"
+                    if activity.get('distance'):
+                        result += f"     Distance: {activity.get('distance')} km\n"
+                    result += "\n"
             else:
                 result += "  No activities planned for this day\n\n"
         

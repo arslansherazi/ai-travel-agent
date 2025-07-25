@@ -1,12 +1,12 @@
 """
-Places service module containing the PlacesService utils
+Places service module containing the PlacesService utils for Photon API
 """
 
 import math
+import requests
 from typing import List, Dict, Optional, Union, Tuple
-from _mcp.servers.base_service import BaseService
 from _mcp.servers.places.constants import (
-    GOOGLE_PLACES_API_BASE_URL,
+    PHOTON_API_BASE_URL,
     ENDPOINTS,
     PLACE_TYPES,
     SEARCH_RADIUS,
@@ -14,26 +14,23 @@ from _mcp.servers.places.constants import (
     DEFAULT_RESULTS_LIMIT,
     MAX_RESULTS_LIMIT,
     MIN_RESULTS_LIMIT,
-    PRICE_LEVELS,
     WEATHER_PLACE_MAPPING,
     DISTANCE_CATEGORIES,
     DEFAULT_LANGUAGE
 )
 
 
-class PlacesService(BaseService):
+class PlacesService:
     """
-    Service class for places-related operations
+    Service class for places-related operations using Photon API
     """
     
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self):
         """
         Initialize the places service
-        
-        :param api_key: Google Places API key
+        Note: Photon API doesn't require an API key
         """
-        self.api_key = api_key
-        self.base_url = GOOGLE_PLACES_API_BASE_URL
+        self.base_url = PHOTON_API_BASE_URL
     
     def search_places(
         self,
@@ -41,21 +38,19 @@ class PlacesService(BaseService):
         place_type: Optional[str] = None,
         radius: int = DEFAULT_RADIUS,
         limit: int = DEFAULT_RESULTS_LIMIT,
-        min_rating: Optional[float] = None,
-        price_level: Optional[str] = None
+        language: str = DEFAULT_LANGUAGE
     ) -> str:
         """
         Search for places based on location and criteria
         
         :param location: location string or (lat, lng) tuple
         :param place_type: type of place to search for
-        :param radius: search radius in meters
+        :param radius: search radius in kilometers
         :param limit: maximum number of results
-        :param min_rating: minimum rating filter
-        :param price_level: price level filter
+        :param language: preferred language for results
         :return: formatted search results
         """
-        places_data = self.search_places_data(location, place_type, radius, limit, min_rating, price_level)
+        places_data = self.search_places_data(location, place_type, radius, limit, language)
         if isinstance(places_data, str):  # Error case
             return places_data
         
@@ -67,75 +62,218 @@ class PlacesService(BaseService):
         place_type: Optional[str] = None,
         radius: int = DEFAULT_RADIUS,
         limit: int = DEFAULT_RESULTS_LIMIT,
-        min_rating: Optional[float] = None,
-        price_level: Optional[str] = None
+        language: str = DEFAULT_LANGUAGE
     ) -> List[Dict] | str:
         """
-        Search for places and return structured data (for use by other services)
+        Search for places and return structured data
         
         :param location: location string or (lat, lng) tuple
         :param place_type: type of place to search for
-        :param radius: search radius in meters
+        :param radius: search radius in kilometers
         :param limit: maximum number of results
-        :param min_rating: minimum rating filter
-        :param price_level: price level filter
+        :param language: preferred language for results
         :return: list of place data or error string
         """
-        api_key_error = self.check_api_key_required(self.api_key, "Google Places API")
-        if api_key_error:
-            return api_key_error
-        
-        # Get coordinates if location is a string
-        if isinstance(location, str):
-            lat, lng = self.get_coordinates(location)
-            if not lat or not lng:
-                return f"Could not find coordinates for {location}"
-        else:
-            lat, lng = location
-        
         # Validate inputs
-        validation_error = self._validate_search_params(place_type, radius, limit, min_rating, price_level)
+        validation_error = self._validate_search_params(place_type, radius, limit)
         if validation_error:
             return validation_error
         
-        # Prepare search parameters
-        params = {
-            "location": f"{lat},{lng}",
-            "radius": min(radius, SEARCH_RADIUS["very_far"]),
-            "key": self.api_key,
-            "language": DEFAULT_LANGUAGE
-        }
+        # If location is coordinates, search nearby
+        if isinstance(location, tuple):
+            lat, lng = location
+            return self._search_nearby(lat, lng, place_type, radius, limit, language)
         
-        # Add optional filters
-        if place_type and place_type in PLACE_TYPES:
-            params["type"] = PLACE_TYPES[place_type]
+        # If location is a string, first geocode it then search nearby
+        geocode_result = self.geocode_location(location, language)
+        if isinstance(geocode_result, str):  # Error case
+            return geocode_result
         
-        if min_rating:
-            params["minprice"] = 0
+        if not geocode_result:
+            return f"Could not find location: {location}"
         
-        if price_level and price_level in PRICE_LEVELS:
-            params["maxprice"] = PRICE_LEVELS[price_level]
-            params["minprice"] = 0
+        # Get the first result's coordinates
+        first_result = geocode_result[0]
+        coordinates = first_result.get("geometry", {}).get("coordinates", [])
+        if len(coordinates) != 2:
+            return f"Invalid coordinates for location: {location}"
         
+        lng, lat = coordinates  # GeoJSON uses [lng, lat] format
+        
+        # Search for places near the geocoded location
+        return self._search_nearby(lat, lng, place_type, radius, limit, language)
+
+    def geocode_location(
+        self,
+        location: str,
+        language: str = DEFAULT_LANGUAGE,
+        limit: int = 10
+    ) -> List[Dict] | str:
+        """
+        Geocode a location string to get coordinates and place information
+        
+        :param location: location string to geocode
+        :param language: preferred language for results
+        :param limit: maximum number of results
+        :return: list of geocoding results or error string
+        """
         try:
-            url = f"{self.base_url}{ENDPOINTS['nearby_search']}"
-            response = self.make_api_request(url, params=params)
+            params = {
+                "q": location,
+                "limit": limit,
+                "lang": language
+            }
             
-            if response.get("error"):
-                return self.format_error_response(response["error"], "places search")
+            url = f"{self.base_url}{ENDPOINTS['search']}"
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
             
-            # Filter results by rating if specified
-            places = response.get("results", [])
-            if min_rating:
-                places = [place for place in places if place.get("rating", 0) >= min_rating]
+            data = response.json()
             
-            # Limit results
-            places = places[:limit]
+            if data.get("type") != "FeatureCollection":
+                return "Invalid response format from geocoding service"
             
-            return places
+            features = data.get("features", [])
+            return features
+            
+        except requests.exceptions.RequestException as e:
+            return f"Error geocoding location: {str(e)}"
+        except Exception as e:
+            return f"Unexpected error during geocoding: {str(e)}"
+
+    def reverse_geocode(
+        self,
+        lat: float,
+        lng: float,
+        language: str = DEFAULT_LANGUAGE
+    ) -> Dict | str:
+        """
+        Reverse geocode coordinates to get place information
+        
+        :param lat: latitude
+        :param lng: longitude  
+        :param language: preferred language for results
+        :return: place information or error string
+        """
+        try:
+            params = {
+                "lat": lat,
+                "lon": lng,
+                "lang": language
+            }
+            
+            url = f"{self.base_url}{ENDPOINTS['reverse']}"
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            if data.get("type") != "FeatureCollection":
+                return "Invalid response format from reverse geocoding service"
+            
+            features = data.get("features", [])
+            if not features:
+                return f"No place found at coordinates ({lat}, {lng})"
+            
+            return features[0]  # Return the first (most relevant) result
+            
+        except requests.exceptions.RequestException as e:
+            return f"Error reverse geocoding: {str(e)}"
+        except Exception as e:
+            return f"Unexpected error during reverse geocoding: {str(e)}"
+
+    def _search_nearby(
+        self,
+        lat: float,
+        lng: float,
+        place_type: Optional[str],
+        radius: int,
+        limit: int,
+        language: str
+    ) -> List[Dict] | str:
+        """
+        Search for places near given coordinates
+        Note: Photon API is primarily geocoding, so this simulates nearby search
+        by searching for place types in the area
+        
+        :param lat: latitude
+        :param lng: longitude
+        :param place_type: type of place to search for
+        :param radius: search radius in kilometers
+        :param limit: maximum number of results
+        :param language: preferred language
+        :return: list of places or error string
+        """
+        try:
+            # Since Photon doesn't have a true "nearby search", we'll search for
+            # place types with geographic bounds
+            search_terms = []
+            
+            if place_type and place_type in PLACE_TYPES:
+                search_terms.append(PLACE_TYPES[place_type])
+            else:
+                # Search for common place types
+                search_terms = ["restaurant", "hotel", "shop", "attraction", "museum"]
+            
+            all_places = []
+            
+            for term in search_terms:
+                try:
+                    # Calculate bounding box for the search
+                    lat_delta = radius / 111.0  # Rough conversion: 1 degree lat ≈ 111km
+                    lng_delta = radius / (111.0 * math.cos(math.radians(lat)))
+                    
+                    # Create a search query that includes the place type and location context
+                    query = f"{term} near {lat},{lng}"
+                    
+                    params = {
+                        "q": query,
+                        "limit": min(limit, 20),
+                        "lang": language,
+                        "lat": lat,
+                        "lon": lng
+                    }
+                    
+                    url = f"{self.base_url}{ENDPOINTS['search']}"
+                    response = requests.get(url, params=params, timeout=10)
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        features = data.get("features", [])
+                        
+                        # Filter by distance
+                        filtered_features = []
+                        for feature in features:
+                            coords = feature.get("geometry", {}).get("coordinates", [])
+                            if len(coords) == 2:
+                                place_lng, place_lat = coords
+                                distance = self._calculate_distance(lat, lng, place_lat, place_lng)
+                                if distance <= radius:
+                                    feature["distance_km"] = distance
+                                    feature["search_term"] = term
+                                    filtered_features.append(feature)
+                        
+                        all_places.extend(filtered_features)
+                
+                except Exception:
+                    continue
+            
+            # Remove duplicates and sort by distance
+            unique_places = []
+            seen_names = set()
+            
+            for place in all_places:
+                name = place.get("properties", {}).get("name", "")
+                if name and name not in seen_names:
+                    seen_names.add(name)
+                    unique_places.append(place)
+            
+            # Sort by distance and limit results
+            unique_places.sort(key=lambda x: x.get("distance_km", float('inf')))
+            return unique_places[:limit]
             
         except Exception as e:
-            return self.format_error_response(str(e), "places search")
+            return f"Error searching nearby places: {str(e)}"
 
     def recommend_places_by_weather(
         self,
@@ -148,7 +286,7 @@ class PlacesService(BaseService):
         Recommend places based on weather conditions
         
         :param location: location string or (lat, lng) tuple
-        :param weather_condition: weather condition (sunny, rainy, cloudy, etc.)
+        :param weather_condition: weather condition
         :param max_distance: maximum distance to search
         :param limit: maximum number of recommendations
         :return: formatted recommendations
@@ -170,20 +308,21 @@ class PlacesService(BaseService):
         Recommend places based on weather conditions and return structured data
         
         :param location: location string or (lat, lng) tuple
-        :param weather_condition: weather condition (sunny, rainy, cloudy, etc.)
+        :param weather_condition: weather condition
         :param max_distance: maximum distance to search
         :param limit: maximum number of recommendations
         :return: list of place data or error string
         """
-        api_key_error = self.check_api_key_required(self.api_key, "Google Places API")
-        if api_key_error:
-            return api_key_error
-        
         # Get coordinates if location is a string
         if isinstance(location, str):
-            lat, lng = self.get_coordinates(location)
-            if not lat or not lng:
-                return f"Could not find coordinates for {location}"
+            geocode_result = self.geocode_location(location)
+            if isinstance(geocode_result, str) or not geocode_result:
+                return f"Could not find location: {location}"
+            
+            coordinates = geocode_result[0].get("geometry", {}).get("coordinates", [])
+            if len(coordinates) != 2:
+                return f"Invalid coordinates for location: {location}"
+            lng, lat = coordinates
         else:
             lat, lng = location
         
@@ -198,33 +337,16 @@ class PlacesService(BaseService):
         
         # Search for each recommended place type
         for place_type in recommended_types:
-            try:
-                params = {
-                    "location": f"{lat},{lng}",
-                    "radius": max_distance,
-                    "type": place_type,
-                    "key": self.api_key,
-                    "language": DEFAULT_LANGUAGE
-                }
-                
-                url = f"{self.base_url}{ENDPOINTS['nearby_search']}"
-                response = self.make_api_request(url, params=params)
-                
-                if not response.get("error"):
-                    places = response.get("results", [])[:3]  # Top 3 per category
-                    for place in places:
-                        place["recommended_for"] = weather_condition
-                        place["category"] = place_type
-                    all_recommendations.extend(places)
-                    
-            except Exception:
-                continue
+            places = self._search_nearby(lat, lng, place_type, max_distance, 5, DEFAULT_LANGUAGE)
+            if isinstance(places, list):
+                for place in places:
+                    place["recommended_for"] = weather_condition
+                    place["category"] = place_type
+                all_recommendations.extend(places)
         
-        # Sort by rating and limit results
-        all_recommendations.sort(key=lambda x: x.get("rating", 0), reverse=True)
-        final_recommendations = all_recommendations[:limit]
-        
-        return final_recommendations
+        # Sort by distance and limit results
+        all_recommendations.sort(key=lambda x: x.get("distance_km", float('inf')))
+        return all_recommendations[:limit]
 
     def recommend_places_by_distance(
         self,
@@ -236,7 +358,7 @@ class PlacesService(BaseService):
         Recommend places based on distance categories
         
         :param location: location string or (lat, lng) tuple
-        :param travel_mode: travel mode (walking, short_drive, day_trip, extended)
+        :param travel_mode: travel mode
         :param limit: maximum number of recommendations
         :return: formatted recommendations
         """
@@ -256,19 +378,20 @@ class PlacesService(BaseService):
         Recommend places based on distance categories and return structured data
         
         :param location: location string or (lat, lng) tuple
-        :param travel_mode: travel mode (walking, short_drive, day_trip, extended)
+        :param travel_mode: travel mode
         :param limit: maximum number of recommendations
         :return: list of place data or error string
         """
-        api_key_error = self.check_api_key_required(self.api_key, "Google Places API")
-        if api_key_error:
-            return api_key_error
-        
         # Get coordinates if location is a string
         if isinstance(location, str):
-            lat, lng = self.get_coordinates(location)
-            if not lat or not lng:
-                return f"Could not find coordinates for {location}"
+            geocode_result = self.geocode_location(location)
+            if isinstance(geocode_result, str) or not geocode_result:
+                return f"Could not find location: {location}"
+            
+            coordinates = geocode_result[0].get("geometry", {}).get("coordinates", [])
+            if len(coordinates) != 2:
+                return f"Invalid coordinates for location: {location}"
+            lng, lat = coordinates
         else:
             lat, lng = location
         
@@ -285,45 +408,22 @@ class PlacesService(BaseService):
         
         # Search for each recommended place type
         for place_type in recommended_types:
-            try:
-                params = {
-                    "location": f"{lat},{lng}",
-                    "radius": search_radius,
-                    "type": place_type,
-                    "key": self.api_key,
-                    "language": DEFAULT_LANGUAGE
-                }
-                
-                url = f"{self.base_url}{ENDPOINTS['nearby_search']}"
-                response = self.make_api_request(url, params=params)
-                
-                if not response.get("error"):
-                    places = response.get("results", [])[:2]  # Top 2 per category
-                    for place in places:
-                        place["travel_mode"] = travel_mode
-                        place["category"] = place_type
-                        # Calculate actual distance
-                        place_lat = place.get("geometry", {}).get("location", {}).get("lat", lat)
-                        place_lng = place.get("geometry", {}).get("location", {}).get("lng", lng)
-                        place["distance_km"] = self._calculate_distance(lat, lng, place_lat, place_lng)
-                    all_recommendations.extend(places)
-                    
-            except Exception:
-                continue
+            places = self._search_nearby(lat, lng, place_type, search_radius, 3, DEFAULT_LANGUAGE)
+            if isinstance(places, list):
+                for place in places:
+                    place["travel_mode"] = travel_mode
+                    place["category"] = place_type
+                all_recommendations.extend(places)
         
-        # Sort by rating and limit results
-        all_recommendations.sort(key=lambda x: x.get("rating", 0), reverse=True)
-        final_recommendations = all_recommendations[:limit]
-        
-        return final_recommendations
+        # Sort by distance and limit results
+        all_recommendations.sort(key=lambda x: x.get("distance_km", float('inf')))
+        return all_recommendations[:limit]
     
     @staticmethod
     def _validate_search_params(
         place_type: Optional[str],
         radius: int,
-        limit: int,
-        min_rating: Optional[float],
-        price_level: Optional[str]
+        limit: int
     ) -> Optional[str]:
         """
         Validate search parameters
@@ -331,8 +431,6 @@ class PlacesService(BaseService):
         :param place_type: place type
         :param radius: search radius
         :param limit: results limit
-        :param min_rating: minimum rating
-        :param price_level: price level
         :return: error message if validation fails, None otherwise
         """
         if place_type and place_type not in PLACE_TYPES:
@@ -340,17 +438,10 @@ class PlacesService(BaseService):
             return f"Invalid place type '{place_type}'. Available types: {available_types}"
         
         if radius < 0 or radius > SEARCH_RADIUS["very_far"]:
-            return f"Radius must be between 0 and {SEARCH_RADIUS['very_far']} meters"
+            return f"Radius must be between 0 and {SEARCH_RADIUS['very_far']} km"
         
         if limit < MIN_RESULTS_LIMIT or limit > MAX_RESULTS_LIMIT:
             return f"Limit must be between {MIN_RESULTS_LIMIT} and {MAX_RESULTS_LIMIT}"
-        
-        if min_rating is not None and (min_rating < 0 or min_rating > 5):
-            return "Minimum rating must be between 0 and 5"
-        
-        if price_level and price_level not in PRICE_LEVELS:
-            available_levels = ", ".join(PRICE_LEVELS.keys())
-            return f"Invalid price level '{price_level}'. Available levels: {available_levels}"
         
         return None
     
@@ -382,7 +473,7 @@ class PlacesService(BaseService):
         earth_radius = 6371.0
         distance = earth_radius * c
         
-        return distance
+        return round(distance, 2)
     
     @staticmethod
     def _format_places_results(
@@ -410,18 +501,40 @@ class PlacesService(BaseService):
             return f"No places found for {location_str}{type_filter}"
         
         for i, place in enumerate(places, 1):
-            name = place.get("name", "N/A")
-            rating = place.get("rating", "N/A")
-            price_level = place.get("price_level", "N/A")
-            address = place.get("vicinity", "N/A")
-            types = ", ".join(place.get("types", [])[:3])  # Show first 3 types
+            properties = place.get("properties", {})
+            geometry = place.get("geometry", {})
+            coordinates = geometry.get("coordinates", [])
+            
+            name = properties.get("name", "N/A")
+            city = properties.get("city", "")
+            country = properties.get("country", "")
+            postcode = properties.get("postcode", "")
+            street = properties.get("street", "")
+            housenumber = properties.get("housenumber", "")
+            distance = place.get("distance_km", "N/A")
+            
+            # Build address
+            address_parts = []
+            if housenumber and street:
+                address_parts.append(f"{housenumber} {street}")
+            elif street:
+                address_parts.append(street)
+            if city:
+                address_parts.append(city)
+            if postcode:
+                address_parts.append(postcode)
+            if country:
+                address_parts.append(country)
+            
+            address = ", ".join(address_parts) if address_parts else "N/A"
             
             result += f"{i}. {name}\n"
-            result += f"   Rating: {rating}/5.0\n"
-            result += f"   Price Level: {price_level}/4\n"
             result += f"   Address: {address}\n"
-            result += f"   Types: {types}\n"
-            result += f"   Place ID: {place.get('place_id', 'N/A')}\n\n"
+            if distance != "N/A":
+                result += f"   Distance: {distance} km\n"
+            if len(coordinates) == 2:
+                result += f"   Coordinates: {coordinates[1]:.4f}, {coordinates[0]:.4f}\n"
+            result += f"   OSM ID: {properties.get('osm_id', 'N/A')}\n\n"
         
         return result
     
@@ -463,12 +576,15 @@ class PlacesService(BaseService):
                 place_count = 0
             
             place_count += 1
-            name = rec.get("name", "N/A")
-            rating = rec.get("rating", "N/A")
-            address = rec.get("vicinity", "N/A")
+            properties = rec.get("properties", {})
+            name = properties.get("name", "N/A")
+            distance = rec.get("distance_km", "N/A")
+            city = properties.get("city", "")
             
-            result += f"  {place_count}. {name} (Rating: {rating}/5.0)\n"
-            result += f"     {address}\n"
+            location_info = f" in {city}" if city else ""
+            distance_info = f" ({distance}km)" if distance != "N/A" else ""
+            
+            result += f"  {place_count}. {name}{location_info}{distance_info}\n"
         
         return result
     
@@ -511,12 +627,14 @@ class PlacesService(BaseService):
                 place_count = 0
             
             place_count += 1
-            name = rec.get("name", "N/A")
-            rating = rec.get("rating", "N/A")
+            properties = rec.get("properties", {})
+            name = properties.get("name", "N/A")
             distance = rec.get("distance_km", "N/A")
-            address = rec.get("vicinity", "N/A")
+            city = properties.get("city", "")
             
-            result += f"  {place_count}. {name} (Rating: {rating}/5.0, Distance: {distance}km)\n"
-            result += f"     {address}\n"
+            location_info = f" in {city}" if city else ""
+            distance_info = f" ({distance}km)" if distance != "N/A" else ""
+            
+            result += f"  {place_count}. {name}{location_info}{distance_info}\n"
         
         return result 

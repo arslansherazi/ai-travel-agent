@@ -4,9 +4,8 @@ import os
 
 server = FastMCP("Trip Planner Server")
 
-# Initialize the trip planner service with API keys from environment
+# Initialize the trip planner service with API key from environment
 trip_planner_service = TripPlannerService(
-    places_api_key=os.getenv("GOOGLE_PLACES_API_KEY"),
     booking_api_key=os.getenv("BOOKING_API_KEY")
 )
 

@@ -5,7 +5,12 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+# Copy only the necessary files for trip_planner service
+COPY _mcp/servers/base_service.py _mcp/servers/
+COPY _mcp/servers/constants.py _mcp/servers/
+COPY _mcp/servers/__init__.py _mcp/servers/
+COPY _mcp/servers/trip_planner/ _mcp/servers/trip_planner/
+COPY _mcp/__init__.py _mcp/
 
 EXPOSE 5003
 

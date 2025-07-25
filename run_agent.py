@@ -20,11 +20,17 @@ async def process_user_query(_input: str):
     :param _input: User query string
     """
     try:
+        # Get server URLs with defaults
+        booking_url = os.getenv("BOOKING_SERVER_URL", "http://localhost:8001")
+        places_url = os.getenv("PLACES_SERVER_URL", "http://localhost:8002")
+        planner_url = os.getenv("PLANNER_SERVER_URL", "http://localhost:8003")
+        weather_url = os.getenv("WEATHER_SERVER_URL", "http://localhost:8004")
+        
         async with (
-            MCPServerSse(name="Booking", params={"url": os.getenv("BOOKING_SERVER_URL")}) as booking_server,
-            MCPServerSse(name="Places", params={"url": os.getenv("PLACES_SERVER_URL")}) as places_server,
-            MCPServerSse(name="Planner", params={"url": os.getenv("PLANNER_SERVER_URL")}) as planner_server,
-            MCPServerSse(name="Weather", params={"url": os.getenv("WEATHER_SERVER_URL")}) as weather_server
+            MCPServerSse(name="Booking", params={"url": booking_url}) as booking_server,
+            MCPServerSse(name="Places", params={"url": places_url}) as places_server,
+            MCPServerSse(name="Planner", params={"url": planner_url}) as planner_server,
+            MCPServerSse(name="Weather", params={"url": weather_url}) as weather_server
         ):
             # Connect agents to their respective MCP servers (using mcp_servers list)
             booking_agent.mcp_servers = [booking_server]

@@ -1,137 +1,125 @@
-"""Places service constants"""
+"""Places service constants for Photon API"""
 
-# API URLs - Using Google Places API as primary source
-GOOGLE_PLACES_API_BASE_URL = "https://maps.googleapis.com/maps/api/place"
-FOURSQUARE_API_BASE_URL = "https://api.foursquare.com/v3/places"
+# API URLs - Using Photon API (OpenStreetMap geocoding service)
+PHOTON_API_BASE_URL = "https://photon.komoot.io"
 
 # API Endpoints
 ENDPOINTS = {
-    "nearby_search": "/nearbysearch/json",
-    "text_search": "/textsearch/json", 
-    "place_details": "/details/json",
-    "place_photos": "/photo",
-    "foursquare_search": "/search",
-    "foursquare_nearby": "/nearby"
+    "search": "/api",
+    "reverse": "/reverse"
 }
 
-# Place Types (Google Places API categories)
+# OpenStreetMap place types (simplified from OSM tags)
 PLACE_TYPES = {
-    # Attractions & Entertainment
-    "tourist_attraction": "tourist_attraction",
-    "amusement_park": "amusement_park",
-    "aquarium": "aquarium",
-    "art_gallery": "art_gallery",
-    "museum": "museum",
-    "zoo": "zoo",
-    "casino": "casino",
-    "movie_theater": "movie_theater",
-    "night_club": "night_club",
-    
-    # Food & Dining
+    # Amenities
     "restaurant": "restaurant",
-    "cafe": "cafe",
+    "cafe": "cafe", 
     "bar": "bar",
-    "bakery": "bakery",
-    "meal_takeaway": "meal_takeaway",
+    "pub": "pub",
+    "fast_food": "fast_food",
+    "food_court": "food_court",
     
-    # Shopping
-    "shopping_mall": "shopping_mall",
-    "store": "store",
-    "clothing_store": "clothing_store",
-    "book_store": "book_store",
+    # Tourism
+    "tourist_attraction": "attraction",
+    "museum": "museum",
+    "gallery": "gallery",
+    "viewpoint": "viewpoint",
+    "theme_park": "theme_park",
     
     # Accommodation
-    "lodging": "lodging",
+    "hotel": "hotel",
+    "hostel": "hostel",
+    "guest_house": "guest_house",
+    "camping": "camp_site",
+    
+    # Shopping
+    "shop": "shop",
+    "supermarket": "supermarket",
+    "mall": "mall",
+    "market": "marketplace",
     
     # Transportation
-    "airport": "airport",
+    "airport": "aerodrome",
+    "train_station": "railway",
     "bus_station": "bus_station",
-    "subway_station": "subway_station",
-    "train_station": "train_station",
+    "subway": "subway",
     
-    # Nature & Outdoor
+    # Entertainment
+    "cinema": "cinema",
+    "theatre": "theatre",
+    "casino": "casino",
+    
+    # Nature & Recreation
     "park": "park",
-    "campground": "campground",
-    "rv_park": "rv_park",
+    "garden": "garden",
+    "beach": "beach",
+    "forest": "forest",
     
-    # Religious & Cultural
-    "church": "church",
-    "hindu_temple": "hindu_temple",
-    "mosque": "mosque",
-    "synagogue": "synagogue",
+    # Religious
+    "church": "place_of_worship",
+    "mosque": "place_of_worship", 
+    "temple": "place_of_worship",
+    "synagogue": "place_of_worship",
     
-    # Health & Services
+    # Services
     "hospital": "hospital",
     "pharmacy": "pharmacy",
     "bank": "bank",
     "atm": "atm",
-    "gas_station": "gas_station"
+    "fuel": "fuel"
 }
 
-# Search Radius Options (in meters)
-SEARCH_RADIUS = {
-    "very_close": 500,      # 0.5 km
-    "close": 1000,          # 1 km  
-    "nearby": 5000,         # 5 km
-    "moderate": 10000,      # 10 km
-    "far": 25000,           # 25 km
-    "very_far": 50000       # 50 km
-}
-
-# Default Values
-DEFAULT_RADIUS = SEARCH_RADIUS["nearby"]  # 5km
+# Search parameters
 DEFAULT_RESULTS_LIMIT = 20
-MAX_RESULTS_LIMIT = 60
-MIN_RESULTS_LIMIT = 5
+MAX_RESULTS_LIMIT = 50
+MIN_RESULTS_LIMIT = 1
 
-# Price Levels (Google Places API standard)
-PRICE_LEVELS = {
-    "free": 0,
-    "inexpensive": 1,
-    "moderate": 2,
-    "expensive": 3,
-    "very_expensive": 4
-}
-
-# Rating Thresholds
-RATING_THRESHOLDS = {
-    "excellent": 4.5,
-    "very_good": 4.0,
-    "good": 3.5,
-    "fair": 3.0,
-    "poor": 2.0
-}
-
-# Weather-based Place Recommendations
-WEATHER_PLACE_MAPPING = {
-    "sunny": ["park", "tourist_attraction", "zoo", "amusement_park", "beach"],
-    "rainy": ["museum", "art_gallery", "shopping_mall", "movie_theater", "aquarium"],
-    "cloudy": ["tourist_attraction", "museum", "restaurant", "cafe"],
-    "snowy": ["museum", "shopping_mall", "restaurant", "cafe", "art_gallery"],
-    "windy": ["museum", "shopping_mall", "restaurant", "cafe"],
-    "hot": ["aquarium", "museum", "shopping_mall", "movie_theater", "cafe"],
-    "cold": ["museum", "restaurant", "shopping_mall", "movie_theater", "bar"]
-}
-
-# Distance-based Recommendations
-DISTANCE_CATEGORIES = {
-    "walking": {"max_distance": 2000, "types": ["restaurant", "cafe", "store", "park"]},
-    "short_drive": {"max_distance": 10000, "types": ["tourist_attraction", "museum", "shopping_mall"]},
-    "day_trip": {"max_distance": 50000, "types": ["amusement_park", "zoo", "tourist_attraction", "park"]},
-    "extended": {"max_distance": 100000, "types": ["tourist_attraction", "lodging", "airport"]}
-}
-
-# Photo size options
-PHOTO_SIZES = {
-    "small": 200,
-    "medium": 400, 
-    "large": 800,
-    "extra_large": 1600
-}
-
-# Language codes for international support
+# Supported languages for Photon API
 SUPPORTED_LANGUAGES = [
-    "en", "es", "fr", "de", "it", "pt", "ru", "ja", "ko", "zh", "ar", "hi"
+    "en", "de", "fr", "it", "es", "pt", "pl", "ru", "ar", "ja", "ko", "zh"
 ]
 
-DEFAULT_LANGUAGE = "en" 
+DEFAULT_LANGUAGE = "en"
+
+# Search radius for geographic filtering (in km)
+SEARCH_RADIUS = {
+    "very_close": 1,      # 1 km
+    "close": 5,           # 5 km  
+    "nearby": 10,         # 10 km
+    "moderate": 25,       # 25 km
+    "far": 50,            # 50 km
+    "very_far": 100       # 100 km
+}
+
+DEFAULT_RADIUS = SEARCH_RADIUS["nearby"]  # 10km
+
+# Weather-based place suggestions (simplified for geocoding)
+WEATHER_PLACE_MAPPING = {
+    "sunny": ["park", "beach", "tourist_attraction", "viewpoint"],
+    "rainy": ["museum", "gallery", "mall", "cinema"],
+    "cloudy": ["tourist_attraction", "museum", "restaurant", "cafe"],
+    "snowy": ["museum", "mall", "restaurant", "cafe"],
+    "windy": ["museum", "mall", "restaurant", "cafe"],
+    "hot": ["museum", "mall", "cinema", "cafe"],
+    "cold": ["museum", "restaurant", "mall", "cinema"]
+}
+
+# Distance-based recommendations  
+DISTANCE_CATEGORIES = {
+    "walking": {
+        "radius": 2,
+        "types": ["restaurant", "cafe", "shop", "park"]
+    },
+    "short_drive": {
+        "radius": 15, 
+        "types": ["tourist_attraction", "museum", "mall"]
+    },
+    "day_trip": {
+        "radius": 50,
+        "types": ["theme_park", "tourist_attraction", "park", "beach"]
+    },
+    "extended": {
+        "radius": 100,
+        "types": ["tourist_attraction", "hotel", "airport"]
+    }
+} 
