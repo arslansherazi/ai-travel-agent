@@ -1,455 +1,343 @@
 """
-Places service module containing the PlacesService utils for Photon API
+Places service module for OpenTripMap API integration
+Handles tourist attraction and POI discovery with geocoding support
 """
 
 import math
-import requests
 from typing import List, Dict, Optional, Union, Tuple
+from _mcp.servers.base_service import BaseService
 from _mcp.servers.places.constants import (
-    PHOTON_API_BASE_URL,
+    OPENTRIPMAP_API_BASE_URL,
     ENDPOINTS,
-    PLACE_TYPES,
-    SEARCH_RADIUS,
+    PLACE_CATEGORIES,
     DEFAULT_RADIUS,
+    MAX_RADIUS,
+    MIN_RADIUS,
     DEFAULT_RESULTS_LIMIT,
     MAX_RESULTS_LIMIT,
     MIN_RESULTS_LIMIT,
     WEATHER_PLACE_MAPPING,
-    DISTANCE_CATEGORIES,
-    DEFAULT_LANGUAGE
+    DEFAULT_LANGUAGE,
+    SUPPORTED_LANGUAGES,
+    DEFAULT_FORMAT
 )
 
 
-class PlacesService:
+class PlacesService(BaseService):
     """
-    Service class for places-related operations using Photon API
+    Service class for places-related operations using OpenTripMap API
+    Provides tourist attraction discovery with natural language location support
     """
     
-    def __init__(self):
+    def __init__(self, api_key: Optional[str] = None):
         """
-        Initialize the places service
-        Note: Photon API doesn't require an API key
+        Initialize the places service with optional API key
+
+        :param api_key: OpenTripMap API key (optional - required for higher rate limits)
         """
-        self.base_url = PHOTON_API_BASE_URL
+        self.api_key = api_key
+        self.base_url = OPENTRIPMAP_API_BASE_URL
     
     def search_places(
         self,
-        location: Union[str, Tuple[float, float]],
-        place_type: Optional[str] = None,
+        location: str,
+        category: str = None,
         radius: int = DEFAULT_RADIUS,
         limit: int = DEFAULT_RESULTS_LIMIT,
         language: str = DEFAULT_LANGUAGE
     ) -> str:
         """
-        Search for places based on location and criteria
-        
-        :param location: location string or (lat, lng) tuple
-        :param place_type: type of place to search for
-        :param radius: search radius in kilometers
-        :param limit: maximum number of results
-        :param language: preferred language for results
-        :return: formatted search results
-        """
-        places_data = self.search_places_data(location, place_type, radius, limit, language)
-        if isinstance(places_data, str):  # Error case
-            return places_data
-        
-        return self._format_places_results(location, places_data, place_type)
+        Search for tourist attractions and POIs using OpenTripMap API
 
-    def search_places_data(
-        self,
-        location: Union[str, Tuple[float, float]],
-        place_type: Optional[str] = None,
-        radius: int = DEFAULT_RADIUS,
-        limit: int = DEFAULT_RESULTS_LIMIT,
-        language: str = DEFAULT_LANGUAGE
-    ) -> List[Dict] | str:
+        :param location: location as "lat,lng" coordinates or place name (will geocode first)
+        :param category: place category from PLACE_CATEGORIES constants
+        :param radius: search radius in meters (default: 10000, max: 50000)
+        :param limit: maximum number of results (default: 20, max: 500)
+        :param language: language code for results (default: en)
+        :return: formatted search results or error message string
         """
-        Search for places and return structured data
-        
-        :param location: location string or (lat, lng) tuple
-        :param place_type: type of place to search for
-        :param radius: search radius in kilometers
-        :param limit: maximum number of results
-        :param language: preferred language for results
-        :return: list of place data or error string
+        try:
+            # Parse location
+            lat, lng = self._parse_location(location)
+            if lat is None or lng is None:
+                return self.format_error_response(f"Invalid location: {location}", "location parsing")
+            
+            # Validate parameters
+            radius = max(MIN_RADIUS, min(radius, MAX_RADIUS))
+            limit = max(MIN_RESULTS_LIMIT, min(limit, MAX_RESULTS_LIMIT))
+            language = language if language in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
+            
+            # Build API parameters
+            params = {
+                'radius': radius,
+                'lon': lng,
+                'lat': lat,
+                'format': DEFAULT_FORMAT,
+                'limit': limit,
+                'lang': language
+            }
+            
+            # Add API key if available
+            if self.api_key:
+                params['apikey'] = self.api_key
+            
+            # Add category filter if specified
+            if category and category in PLACE_CATEGORIES:
+                params['kinds'] = PLACE_CATEGORIES[category]
+            
+            # Make API request
+            endpoint = f"{self.base_url}{ENDPOINTS['places_by_location']}"
+            data = self.make_api_request(endpoint, params=params)
+            
+            if data.get("error"):
+                return self.format_error_response(data["error"], "OpenTripMap API")
+            
+            return self._format_places_response(data, lat, lng)
+            
+        except Exception as e:
+            return self.format_error_response(str(e), "search")
+    
+    def get_place_details(self, place_id: str, language: str = DEFAULT_LANGUAGE) -> str:
         """
-        # Validate inputs
-        validation_error = self._validate_search_params(place_type, radius, limit)
-        if validation_error:
-            return validation_error
-        
-        # If location is coordinates, search nearby
-        if isinstance(location, tuple):
-            lat, lng = location
-            return self._search_nearby(lat, lng, place_type, radius, limit, language)
-        
-        # If location is a string, first geocode it then search nearby
-        geocode_result = self.geocode_location(location, language)
-        if isinstance(geocode_result, str):  # Error case
-            return geocode_result
-        
-        if not geocode_result:
-            return f"Could not find location: {location}"
-        
-        # Get the first result's coordinates
-        first_result = geocode_result[0]
-        coordinates = first_result.get("geometry", {}).get("coordinates", [])
-        if len(coordinates) != 2:
-            return f"Invalid coordinates for location: {location}"
-        
-        lng, lat = coordinates  # GeoJSON uses [lng, lat] format
-        
-        # Search for places near the geocoded location
-        return self._search_nearby(lat, lng, place_type, radius, limit, language)
+        Get detailed information about a specific place
 
-    def geocode_location(
+        :param place_id: OpenTripMap place ID (xid)
+        :param language: language code for details (default: en)
+        :return: formatted place details or error message string
+        """
+        try:
+            language = language if language in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
+            
+            params = {
+                'lang': language,
+                'format': DEFAULT_FORMAT
+            }
+            
+            if self.api_key:
+                params['apikey'] = self.api_key
+            
+            endpoint = f"{self.base_url}{ENDPOINTS['place_details']}/{place_id}"
+            data = self.make_api_request(endpoint, params=params)
+            
+            if data.get("error"):
+                return self.format_error_response(data["error"], "place details")
+            
+            return self._format_place_details(data)
+            
+        except Exception as e:
+            return self.format_error_response(str(e), "place details")
+    
+    def autocomplete_places(self, query: str, language: str = DEFAULT_LANGUAGE) -> str:
+        """
+        Get place suggestions for autocomplete functionality
+
+        :param query: search query string
+        :param language: language code for suggestions (default: en)
+        :return: formatted suggestions or error message string
+        """
+        try:
+            language = language if language in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
+            
+            params = {
+                'name': query,
+                'lang': language,
+                'format': DEFAULT_FORMAT
+            }
+            
+            if self.api_key:
+                params['apikey'] = self.api_key
+            
+            endpoint = f"{self.base_url}{ENDPOINTS['place_autocomplete']}"
+            data = self.make_api_request(endpoint, params=params)
+            
+            if data.get("error"):
+                return self.format_error_response(data["error"], "autocomplete")
+            
+            return self._format_autocomplete_response(data)
+            
+        except Exception as e:
+            return self.format_error_response(str(e), "autocomplete")
+    
+    def get_places_by_weather(
         self,
         location: str,
-        language: str = DEFAULT_LANGUAGE,
-        limit: int = 10
-    ) -> List[Dict] | str:
-        """
-        Geocode a location string to get coordinates and place information
-        
-        :param location: location string to geocode
-        :param language: preferred language for results
-        :param limit: maximum number of results
-        :return: list of geocoding results or error string
-        """
-        try:
-            params = {
-                "q": location,
-                "limit": limit,
-                "lang": language
-            }
-            
-            url = f"{self.base_url}{ENDPOINTS['search']}"
-            response = requests.get(url, params=params, timeout=10)
-            response.raise_for_status()
-            
-            data = response.json()
-            
-            if data.get("type") != "FeatureCollection":
-                return "Invalid response format from geocoding service"
-            
-            features = data.get("features", [])
-            return features
-            
-        except requests.exceptions.RequestException as e:
-            return f"Error geocoding location: {str(e)}"
-        except Exception as e:
-            return f"Unexpected error during geocoding: {str(e)}"
-
-    def reverse_geocode(
-        self,
-        lat: float,
-        lng: float,
-        language: str = DEFAULT_LANGUAGE
-    ) -> Dict | str:
-        """
-        Reverse geocode coordinates to get place information
-        
-        :param lat: latitude
-        :param lng: longitude  
-        :param language: preferred language for results
-        :return: place information or error string
-        """
-        try:
-            params = {
-                "lat": lat,
-                "lon": lng,
-                "lang": language
-            }
-            
-            url = f"{self.base_url}{ENDPOINTS['reverse']}"
-            response = requests.get(url, params=params, timeout=10)
-            response.raise_for_status()
-            
-            data = response.json()
-            
-            if data.get("type") != "FeatureCollection":
-                return "Invalid response format from reverse geocoding service"
-            
-            features = data.get("features", [])
-            if not features:
-                return f"No place found at coordinates ({lat}, {lng})"
-            
-            return features[0]  # Return the first (most relevant) result
-            
-        except requests.exceptions.RequestException as e:
-            return f"Error reverse geocoding: {str(e)}"
-        except Exception as e:
-            return f"Unexpected error during reverse geocoding: {str(e)}"
-
-    def _search_nearby(
-        self,
-        lat: float,
-        lng: float,
-        place_type: Optional[str],
-        radius: int,
-        limit: int,
-        language: str
-    ) -> List[Dict] | str:
-        """
-        Search for places near given coordinates
-        Note: Photon API is primarily geocoding, so this simulates nearby search
-        by searching for place types in the area
-        
-        :param lat: latitude
-        :param lng: longitude
-        :param place_type: type of place to search for
-        :param radius: search radius in kilometers
-        :param limit: maximum number of results
-        :param language: preferred language
-        :return: list of places or error string
-        """
-        try:
-            # Since Photon doesn't have a true "nearby search", we'll search for
-            # place types with geographic bounds
-            search_terms = []
-            
-            if place_type and place_type in PLACE_TYPES:
-                search_terms.append(PLACE_TYPES[place_type])
-            else:
-                # Search for common place types
-                search_terms = ["restaurant", "hotel", "shop", "attraction", "museum"]
-            
-            all_places = []
-            
-            for term in search_terms:
-                try:
-                    # Calculate bounding box for the search
-                    lat_delta = radius / 111.0  # Rough conversion: 1 degree lat ≈ 111km
-                    lng_delta = radius / (111.0 * math.cos(math.radians(lat)))
-                    
-                    # Create a search query that includes the place type and location context
-                    query = f"{term} near {lat},{lng}"
-                    
-                    params = {
-                        "q": query,
-                        "limit": min(limit, 20),
-                        "lang": language,
-                        "lat": lat,
-                        "lon": lng
-                    }
-                    
-                    url = f"{self.base_url}{ENDPOINTS['search']}"
-                    response = requests.get(url, params=params, timeout=10)
-                    
-                    if response.status_code == 200:
-                        data = response.json()
-                        features = data.get("features", [])
-                        
-                        # Filter by distance
-                        filtered_features = []
-                        for feature in features:
-                            coords = feature.get("geometry", {}).get("coordinates", [])
-                            if len(coords) == 2:
-                                place_lng, place_lat = coords
-                                distance = self._calculate_distance(lat, lng, place_lat, place_lng)
-                                if distance <= radius:
-                                    feature["distance_km"] = distance
-                                    feature["search_term"] = term
-                                    filtered_features.append(feature)
-                        
-                        all_places.extend(filtered_features)
-                
-                except Exception:
-                    continue
-            
-            # Remove duplicates and sort by distance
-            unique_places = []
-            seen_names = set()
-            
-            for place in all_places:
-                name = place.get("properties", {}).get("name", "")
-                if name and name not in seen_names:
-                    seen_names.add(name)
-                    unique_places.append(place)
-            
-            # Sort by distance and limit results
-            unique_places.sort(key=lambda x: x.get("distance_km", float('inf')))
-            return unique_places[:limit]
-            
-        except Exception as e:
-            return f"Error searching nearby places: {str(e)}"
-
-    def recommend_places_by_weather(
-        self,
-        location: Union[str, Tuple[float, float]],
         weather_condition: str,
-        max_distance: int = DEFAULT_RADIUS,
+        radius: int = DEFAULT_RADIUS,
         limit: int = DEFAULT_RESULTS_LIMIT
     ) -> str:
         """
-        Recommend places based on weather conditions
-        
-        :param location: location string or (lat, lng) tuple
-        :param weather_condition: weather condition
-        :param max_distance: maximum distance to search
-        :param limit: maximum number of recommendations
-        :return: formatted recommendations
-        """
-        recommendations_data = self.recommend_places_by_weather_data(location, weather_condition, max_distance, limit)
-        if isinstance(recommendations_data, str):  # Error case
-            return recommendations_data
-        
-        return self._format_weather_recommendations(location, recommendations_data, weather_condition)
+        Get places suitable for specific weather conditions
 
-    def recommend_places_by_weather_data(
-        self,
-        location: Union[str, Tuple[float, float]],
-        weather_condition: str,
-        max_distance: int = DEFAULT_RADIUS,
-        limit: int = DEFAULT_RESULTS_LIMIT
-    ) -> List[Dict] | str:
+        :param location: location as "lat,lng" coordinates
+        :param weather_condition: weather condition (sunny, rainy, cloudy, snowy, windy)
+        :param radius: search radius in meters (default: 10000)
+        :param limit: maximum number of results (default: 20)
+        :return: formatted results or error message string
         """
-        Recommend places based on weather conditions and return structured data
-        
-        :param location: location string or (lat, lng) tuple
-        :param weather_condition: weather condition
-        :param max_distance: maximum distance to search
-        :param limit: maximum number of recommendations
-        :return: list of place data or error string
-        """
-        # Get coordinates if location is a string
-        if isinstance(location, str):
-            geocode_result = self.geocode_location(location)
-            if isinstance(geocode_result, str) or not geocode_result:
-                return f"Could not find location: {location}"
+        try:
+            if weather_condition not in WEATHER_PLACE_MAPPING:
+                return self.format_error_response(f"Unknown weather condition: {weather_condition}", "weather filtering")
             
-            coordinates = geocode_result[0].get("geometry", {}).get("coordinates", [])
-            if len(coordinates) != 2:
-                return f"Invalid coordinates for location: {location}"
-            lng, lat = coordinates
-        else:
-            lat, lng = location
-        
-        # Get recommended place types for weather condition
-        weather_key = weather_condition.lower()
-        if weather_key not in WEATHER_PLACE_MAPPING:
-            available_conditions = ", ".join(WEATHER_PLACE_MAPPING.keys())
-            return f"Weather condition '{weather_condition}' not supported. Available: {available_conditions}"
-        
-        recommended_types = WEATHER_PLACE_MAPPING[weather_key]
-        all_recommendations = []
-        
-        # Search for each recommended place type
-        for place_type in recommended_types:
-            places = self._search_nearby(lat, lng, place_type, max_distance, 5, DEFAULT_LANGUAGE)
-            if isinstance(places, list):
-                for place in places:
-                    place["recommended_for"] = weather_condition
-                    place["category"] = place_type
-                all_recommendations.extend(places)
-        
-        # Sort by distance and limit results
-        all_recommendations.sort(key=lambda x: x.get("distance_km", float('inf')))
-        return all_recommendations[:limit]
-
-    def recommend_places_by_distance(
-        self,
-        location: Union[str, Tuple[float, float]],
-        travel_mode: str = "walking",
-        limit: int = DEFAULT_RESULTS_LIMIT
-    ) -> str:
-        """
-        Recommend places based on distance categories
-        
-        :param location: location string or (lat, lng) tuple
-        :param travel_mode: travel mode
-        :param limit: maximum number of recommendations
-        :return: formatted recommendations
-        """
-        recommendations_data = self.recommend_places_by_distance_data(location, travel_mode, limit)
-        if isinstance(recommendations_data, str):  # Error case
-            return recommendations_data
-        
-        return self._format_distance_recommendations(location, recommendations_data, travel_mode)
-
-    def recommend_places_by_distance_data(
-        self,
-        location: Union[str, Tuple[float, float]],
-        travel_mode: str = "walking",
-        limit: int = DEFAULT_RESULTS_LIMIT
-    ) -> List[Dict] | str:
-        """
-        Recommend places based on distance categories and return structured data
-        
-        :param location: location string or (lat, lng) tuple
-        :param travel_mode: travel mode
-        :param limit: maximum number of recommendations
-        :return: list of place data or error string
-        """
-        # Get coordinates if location is a string
-        if isinstance(location, str):
-            geocode_result = self.geocode_location(location)
-            if isinstance(geocode_result, str) or not geocode_result:
-                return f"Could not find location: {location}"
+            suitable_categories = WEATHER_PLACE_MAPPING[weather_condition]
+            all_results = []
             
-            coordinates = geocode_result[0].get("geometry", {}).get("coordinates", [])
-            if len(coordinates) != 2:
-                return f"Invalid coordinates for location: {location}"
-            lng, lat = coordinates
-        else:
-            lat, lng = location
-        
-        # Get distance configuration
-        if travel_mode not in DISTANCE_CATEGORIES:
-            available_modes = ", ".join(DISTANCE_CATEGORIES.keys())
-            return f"Travel mode '{travel_mode}' not supported. Available: {available_modes}"
-        
-        distance_config = DISTANCE_CATEGORIES[travel_mode]
-        search_radius = distance_config["radius"]
-        recommended_types = distance_config["types"]
-        
-        all_recommendations = []
-        
-        # Search for each recommended place type
-        for place_type in recommended_types:
-            places = self._search_nearby(lat, lng, place_type, search_radius, 3, DEFAULT_LANGUAGE)
-            if isinstance(places, list):
-                for place in places:
-                    place["travel_mode"] = travel_mode
-                    place["category"] = place_type
-                all_recommendations.extend(places)
-        
-        # Sort by distance and limit results
-        all_recommendations.sort(key=lambda x: x.get("distance_km", float('inf')))
-        return all_recommendations[:limit]
+            for category in suitable_categories:
+                result = self.search_places(location, category, radius, limit // len(suitable_categories))
+                if not result.startswith("Error"):
+                    all_results.append(f"=== {category.replace('_', ' ').title()} ===\n{result}")
+            
+            if not all_results:
+                return f"No places found suitable for {weather_condition} weather"
+            
+            return f"Places suitable for {weather_condition} weather:\n\n" + "\n\n".join(all_results)
+            
+        except Exception as e:
+            return self.format_error_response(str(e), "weather-based search")
     
-    @staticmethod
-    def _validate_search_params(
-        place_type: Optional[str],
-        radius: int,
-        limit: int
-    ) -> Optional[str]:
+    def _parse_location(self, location: str) -> Tuple[Optional[float], Optional[float]]:
         """
-        Validate search parameters
-        
-        :param place_type: place type
-        :param radius: search radius
-        :param limit: results limit
-        :return: error message if validation fails, None otherwise
+        Parse location string to lat/lng coordinates
+
+        :param location: location as "lat,lng" coordinates or place name
+        :return: tuple of (lat, lng) or (None, None) if invalid
         """
-        if place_type and place_type not in PLACE_TYPES:
-            available_types = ", ".join(PLACE_TYPES.keys())
-            return f"Invalid place type '{place_type}'. Available types: {available_types}"
-        
-        if radius < 0 or radius > SEARCH_RADIUS["very_far"]:
-            return f"Radius must be between 0 and {SEARCH_RADIUS['very_far']} km"
-        
-        if limit < MIN_RESULTS_LIMIT or limit > MAX_RESULTS_LIMIT:
-            return f"Limit must be between {MIN_RESULTS_LIMIT} and {MAX_RESULTS_LIMIT}"
-        
-        return None
+        try:
+            # Try to parse as coordinates first
+            if ',' in location:
+                parts = location.strip().split(',')
+                if len(parts) == 2:
+                    lat = float(parts[0].strip())
+                    lng = float(parts[1].strip())
+                    
+                    # Validate coordinate ranges using base service method
+                    if self.validate_coordinates(lat, lng):
+                        return lat, lng
+            
+            # If not coordinates, try to geocode the location name using base service
+            lat, lng = self.get_coordinates(location)
+            return lat, lng
+            
+        except (ValueError, IndexError):
+            return None, None
+    
+    def _format_places_response(self, data: Union[Dict, List], center_lat: float, center_lng: float) -> str:
+        """
+        Format the API response into a readable string
+
+        :param data: API response data (dict or list)
+        :param center_lat: center latitude for distance calculation
+        :param center_lng: center longitude for distance calculation
+        :return: formatted string with places information
+        """
+        try:
+            # Handle different response formats
+            places = data if isinstance(data, list) else data.get('features', [])
+            
+            if not places:
+                return "No places found in the specified area."
+            
+            result = f"Found {len(places)} tourist attractions and points of interest:\n\n"
+            
+            for i, place in enumerate(places, 1):
+                name = place.get('properties', {}).get('name', 'Unknown Place')
+                xid = place.get('properties', {}).get('xid', '')
+                kinds = place.get('properties', {}).get('kinds', '')
+                
+                # Get coordinates for distance calculation
+                coords = place.get('geometry', {}).get('coordinates', [])
+                if len(coords) >= 2:
+                    place_lng, place_lat = coords[0], coords[1]
+                    distance = self._calculate_distance(center_lat, center_lng, place_lat, place_lng)
+                    distance_text = f" ({distance:.1f}km away)"
+                else:
+                    distance_text = ""
+                
+                # Format kinds/categories
+                categories = kinds.replace(',', ', ').replace('_', ' ').title() if kinds else 'General Attraction'
+                
+                result += f"{i}. {name}{distance_text}\n"
+                result += f"   Categories: {categories}\n"
+                if xid:
+                    result += f"   ID: {xid}\n"
+                result += "\n"
+            
+            return result.strip()
+            
+        except Exception as e:
+            return self.format_error_response(str(e), "response formatting")
+    
+    def _format_place_details(self, data: Dict) -> str:
+        """
+        Format place details into a readable string
+
+        :param data: place details data dictionary
+        :return: formatted string with place details
+        """
+        try:
+            name = data.get('name', 'Unknown Place')
+            kinds = data.get('kinds', '')
+            address = data.get('address', {})
+            wikipedia = data.get('wikipedia', '')
+            image = data.get('image', '')
+            
+            result = f"=== {name} ===\n\n"
+            
+            if kinds:
+                categories = kinds.replace(',', ', ').replace('_', ' ').title()
+                result += f"Categories: {categories}\n"
+            
+            if address:
+                addr_parts = []
+                for key in ['house_number', 'road', 'city', 'state', 'country']:
+                    if key in address and address[key]:
+                        addr_parts.append(address[key])
+                if addr_parts:
+                    result += f"Address: {', '.join(addr_parts)}\n"
+            
+            if wikipedia:
+                result += f"Wikipedia: {wikipedia}\n"
+            
+            if image:
+                result += f"Image: {image}\n"
+            
+            return result.strip()
+            
+        except Exception as e:
+            return self.format_error_response(str(e), "place details formatting")
+    
+    def _format_autocomplete_response(self, data: Union[Dict, List]) -> str:
+        """
+        Format autocomplete suggestions into a readable string
+
+        :param data: autocomplete response data (dict or list)
+        :return: formatted string with suggestions
+        """
+        try:
+            suggestions = data if isinstance(data, list) else data.get('features', [])
+            
+            if not suggestions:
+                return "No suggestions found."
+            
+            result = "Suggestions:\n\n"
+            for i, suggestion in enumerate(suggestions, 1):
+                name = suggestion.get('properties', {}).get('name', 'Unknown')
+                country = suggestion.get('properties', {}).get('country', '')
+                
+                result += f"{i}. {name}"
+                if country:
+                    result += f" ({country})"
+                result += "\n"
+            
+            return result.strip()
+            
+        except Exception as e:
+            return self.format_error_response(str(e), "suggestions formatting")
     
     @staticmethod
     def _calculate_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
         """
         Calculate distance between two points using Haversine formula
-        
+
         :param lat1: latitude of first point
         :param lng1: longitude of first point
         :param lat2: latitude of second point
@@ -457,184 +345,15 @@ class PlacesService:
         :return: distance in kilometers
         """
         # Convert to radians
-        lat1_rad = math.radians(lat1)
-        lng1_rad = math.radians(lng1)
-        lat2_rad = math.radians(lat2)
-        lng2_rad = math.radians(lng2)
+        lat1, lng1, lat2, lng2 = map(math.radians, [lat1, lng1, lat2, lng2])
         
         # Haversine formula
-        dlat = lat2_rad - lat1_rad
-        dlng = lng2_rad - lng1_rad
-        
-        a = math.sin(dlat/2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlng/2)**2
+        dlat = lat2 - lat1
+        dlng = lng2 - lng1
+        a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlng/2)**2
         c = 2 * math.asin(math.sqrt(a))
         
         # Earth's radius in kilometers
-        earth_radius = 6371.0
-        distance = earth_radius * c
+        r = 6371
         
-        return round(distance, 2)
-    
-    @staticmethod
-    def _format_places_results(
-        location: Union[str, Tuple[float, float]],
-        places: List[Dict],
-        place_type: Optional[str]
-    ) -> str:
-        """
-        Format places search results
-        
-        :param location: search location
-        :param places: list of places
-        :param place_type: place type filter
-        :return: formatted results
-        """
-        if isinstance(location, tuple):
-            location_str = f"coordinates ({location[0]:.4f}, {location[1]:.4f})"
-        else:
-            location_str = location
-        
-        type_filter = f" ({place_type})" if place_type else ""
-        result = f"Places search results for {location_str}{type_filter}:\n\n"
-        
-        if not places:
-            return f"No places found for {location_str}{type_filter}"
-        
-        for i, place in enumerate(places, 1):
-            properties = place.get("properties", {})
-            geometry = place.get("geometry", {})
-            coordinates = geometry.get("coordinates", [])
-            
-            name = properties.get("name", "N/A")
-            city = properties.get("city", "")
-            country = properties.get("country", "")
-            postcode = properties.get("postcode", "")
-            street = properties.get("street", "")
-            housenumber = properties.get("housenumber", "")
-            distance = place.get("distance_km", "N/A")
-            
-            # Build address
-            address_parts = []
-            if housenumber and street:
-                address_parts.append(f"{housenumber} {street}")
-            elif street:
-                address_parts.append(street)
-            if city:
-                address_parts.append(city)
-            if postcode:
-                address_parts.append(postcode)
-            if country:
-                address_parts.append(country)
-            
-            address = ", ".join(address_parts) if address_parts else "N/A"
-            
-            result += f"{i}. {name}\n"
-            result += f"   Address: {address}\n"
-            if distance != "N/A":
-                result += f"   Distance: {distance} km\n"
-            if len(coordinates) == 2:
-                result += f"   Coordinates: {coordinates[1]:.4f}, {coordinates[0]:.4f}\n"
-            result += f"   OSM ID: {properties.get('osm_id', 'N/A')}\n\n"
-        
-        return result
-    
-    @staticmethod
-    def _format_weather_recommendations(
-        location: Union[str, Tuple[float, float]],
-        recommendations: List[Dict],
-        weather_condition: str
-    ) -> str:
-        """
-        Format weather-based recommendations
-        
-        :param location: search location
-        :param recommendations: list of recommended places
-        :param weather_condition: weather condition
-        :return: formatted recommendations
-        """
-        if isinstance(location, tuple):
-            location_str = f"coordinates ({location[0]:.4f}, {location[1]:.4f})"
-        else:
-            location_str = location
-        
-        result = f"Places recommended for {weather_condition} weather in {location_str}:\n\n"
-        
-        if not recommendations:
-            return f"No places found for {weather_condition} weather in {location_str}"
-        
-        current_category = None
-        place_count = 0
-        
-        for rec in recommendations:
-            category = rec.get("category", "").replace("_", " ").title()
-            
-            if category != current_category:
-                if current_category is not None:
-                    result += "\n"
-                result += f"📍 {category}:\n"
-                current_category = category
-                place_count = 0
-            
-            place_count += 1
-            properties = rec.get("properties", {})
-            name = properties.get("name", "N/A")
-            distance = rec.get("distance_km", "N/A")
-            city = properties.get("city", "")
-            
-            location_info = f" in {city}" if city else ""
-            distance_info = f" ({distance}km)" if distance != "N/A" else ""
-            
-            result += f"  {place_count}. {name}{location_info}{distance_info}\n"
-        
-        return result
-    
-    @staticmethod
-    def _format_distance_recommendations(
-        location: Union[str, Tuple[float, float]],
-        recommendations: List[Dict],
-        travel_mode: str
-    ) -> str:
-        """
-        Format distance-based recommendations
-        
-        :param location: search location
-        :param recommendations: list of recommended places
-        :param travel_mode: travel mode
-        :return: formatted recommendations
-        """
-        if isinstance(location, tuple):
-            location_str = f"coordinates ({location[0]:.4f}, {location[1]:.4f})"
-        else:
-            location_str = location
-        
-        mode_display = travel_mode.replace("_", " ").title()
-        result = f"Places recommended for {mode_display} from {location_str}:\n\n"
-        
-        if not recommendations:
-            return f"No places found for {mode_display} from {location_str}"
-        
-        current_category = None
-        place_count = 0
-        
-        for rec in recommendations:
-            category = rec.get("category", "").replace("_", " ").title()
-            
-            if category != current_category:
-                if current_category is not None:
-                    result += "\n"
-                result += f"📍 {category}:\n"
-                current_category = category
-                place_count = 0
-            
-            place_count += 1
-            properties = rec.get("properties", {})
-            name = properties.get("name", "N/A")
-            distance = rec.get("distance_km", "N/A")
-            city = properties.get("city", "")
-            
-            location_info = f" in {city}" if city else ""
-            distance_info = f" ({distance}km)" if distance != "N/A" else ""
-            
-            result += f"  {place_count}. {name}{location_info}{distance_info}\n"
-        
-        return result 
+        return c * r 
