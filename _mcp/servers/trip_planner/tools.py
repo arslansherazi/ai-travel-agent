@@ -15,6 +15,7 @@ trip_planner_service = TripPlannerService(
     places_api_key=os.getenv("OPENTRIPMAP_API_KEY")
 )
 
+
 @server.tool()
 def plan_complete_trip(
     destination: str,
@@ -53,6 +54,7 @@ def plan_complete_trip(
     except Exception as e:
         return f"Error planning trip: {str(e)}"
 
+
 @server.tool()
 def suggest_daily_activities(
     destination: str,
@@ -85,6 +87,7 @@ def suggest_daily_activities(
     except Exception as e:
         return f"Error suggesting activities: {str(e)}"
 
+
 @server.tool()
 def find_nearby_amenities(
     location: str,
@@ -107,6 +110,7 @@ def find_nearby_amenities(
         )
     except Exception as e:
         return f"Error finding amenities: {str(e)}"
+
 
 @server.tool()
 def get_weather_based_recommendations(

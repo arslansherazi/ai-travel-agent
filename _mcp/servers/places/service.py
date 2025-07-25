@@ -89,7 +89,8 @@ class PlacesService(BaseService):
             endpoint = f"{self.base_url}{ENDPOINTS['places_by_location']}"
             data = self.make_api_request(endpoint, params=params)
             
-            if data.get("error"):
+            # Check if response is an error (dict with error key) or successful data (list)
+            if isinstance(data, dict) and data.get("error"):
                 return self.format_error_response(data["error"], "OpenTripMap API")
             
             return self._format_places_response(data, lat, lng)
@@ -239,14 +240,15 @@ class PlacesService(BaseService):
             result = f"Found {len(places)} tourist attractions and points of interest:\n\n"
             
             for i, place in enumerate(places, 1):
-                name = place.get('properties', {}).get('name', 'Unknown Place')
-                xid = place.get('properties', {}).get('xid', '')
-                kinds = place.get('properties', {}).get('kinds', '')
+                # OpenTripMap API structure: direct keys (name, xid, kinds, point)
+                name = place.get('name', 'Unknown Place')
+                xid = place.get('xid', '')
+                kinds = place.get('kinds', '')
                 
                 # Get coordinates for distance calculation
-                coords = place.get('geometry', {}).get('coordinates', [])
-                if len(coords) >= 2:
-                    place_lng, place_lat = coords[0], coords[1]
+                point = place.get('point', {})
+                if point and 'lat' in point and 'lon' in point:
+                    place_lat, place_lng = point['lat'], point['lon']
                     distance = self._calculate_distance(center_lat, center_lng, place_lat, place_lng)
                     distance_text = f" ({distance:.1f}km away)"
                 else:

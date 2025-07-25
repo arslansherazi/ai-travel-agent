@@ -161,8 +161,9 @@ class TripPlannerService(BaseService):
             
         except Exception as e:
             return self.format_error_response(str(e), "amenity search")
-    
-    def _validate_trip_inputs(self, destination: str, start_date: str, end_date: str) -> bool:
+
+    @staticmethod
+    def _validate_trip_inputs(destination: str, start_date: str, end_date: str) -> bool:
         """
         Validate trip planning inputs for correctness
 
@@ -193,13 +194,11 @@ class TripPlannerService(BaseService):
         except ValueError:
             return False
     
-    def _get_weather_forecast(self, destination: str, start_date: str, end_date: str) -> Dict:
+    def _get_weather_forecast(self, destination: str) -> Dict:
         """
         Get weather forecast for the trip period using coordinates
 
         :param destination: destination location name
-        :param start_date: start date string
-        :param end_date: end date string
         :return: dictionary of weather data by date
         """
         try:
@@ -209,7 +208,7 @@ class TripPlannerService(BaseService):
                 return {}
             
             # Get weather forecast
-            weather_result = self.weather_service.get_weather_forecast(lat, lng, 7)
+            weather_result = self.weather_service.get_forecast(destination, 7)
             
             # Parse weather data into a more usable format
             weather_by_date = {}
@@ -298,12 +297,11 @@ class TripPlannerService(BaseService):
         except Exception:
             return []
     
-    def _plan_single_day(self, destination: str, date: str, weather: str, interests: List[str]) -> List[Dict]:
+    def _plan_single_day(self, destination: str, weather: str, interests: List[str]) -> List[Dict]:
         """
         Plan activities for a single day
 
         :param destination: destination location name
-        :param date: date string
         :param weather: weather condition
         :param interests: list of user interests
         :return: list of activity dictionaries
@@ -365,8 +363,9 @@ class TripPlannerService(BaseService):
             
         except Exception:
             return None
-    
-    def _format_activity_suggestions(self, attractions: str, weather: str, duration_hours: int) -> str:
+
+    @staticmethod
+    def _format_activity_suggestions(attractions: str, weather: str, duration_hours: int) -> str:
         """
         Format activity suggestions with context
 
@@ -409,8 +408,9 @@ class TripPlannerService(BaseService):
             packing_list.extend(["🧥 Warm jacket", "🧤 Gloves", "🧣 Scarf"])
         
         return packing_list
-    
-    def _format_complete_trip_plan(self, trip_data: Dict, daily_plans: List[Dict], accommodation_data: Dict, packing_list: List[str]) -> str:
+
+    @staticmethod
+    def _format_complete_trip_plan(trip_data: Dict, daily_plans: List[Dict], accommodation_data: Dict, packing_list: List[str]) -> str:
         """
         Format the complete trip plan into a readable string
 

@@ -6,12 +6,15 @@ Provides human-readable, user-friendly tools for finding attractions
 from fastmcp import FastMCP
 from _mcp.servers.places.service import PlacesService
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 server = FastMCP("Places Server")
 places_service = PlacesService(api_key=os.getenv("OPENTRIPMAP_API_KEY"))
 
 
-@server.tool()
+
 def search_attractions(
     location: str,
     category: str = None,
