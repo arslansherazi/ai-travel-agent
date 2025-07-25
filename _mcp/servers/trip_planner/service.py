@@ -3,7 +3,7 @@ Trip planning service using OpenTripMap for attractions, weather data, and booki
 Provides comprehensive trip planning with daily itineraries and activity recommendations
 """
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 from _mcp.servers.base_service import BaseService
 from _mcp.servers.places.service import PlacesService
@@ -66,7 +66,7 @@ class TripPlannerService(BaseService):
             }
             
             # Get weather information
-            weather_data = self._get_weather_forecast(destination, start_date, end_date)
+            weather_data = self._get_weather_forecast(destination)
             
             # Find accommodations
             accommodation_data = self._find_accommodations(destination, start_date, end_date, group_size)
@@ -88,7 +88,6 @@ class TripPlannerService(BaseService):
         destination: str,
         date: str = None,
         weather_condition: str = None,
-        interests: List[str] = None,
         duration_hours: int = 6
     ) -> str:
         """
@@ -104,7 +103,7 @@ class TripPlannerService(BaseService):
         try:
             if not weather_condition and date:
                 # Get weather for the date
-                weather_data = self._get_weather_forecast(destination, date, date)
+                weather_data = self._get_weather_forecast(destination)
                 weather_condition = weather_data.get(date, {}).get('condition', 'cloudy')
             
             # Search for weather-appropriate attractions

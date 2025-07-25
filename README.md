@@ -11,7 +11,7 @@ The system consists of:
 - **Places Agent**: Discovers attractions, restaurants, and activities
 - **Trip Planner Agent**: Creates comprehensive travel itineraries
 
-## Setup Project
+## Setup Local Project
 ~~~
 uv venv .venv
 ~~~
@@ -22,9 +22,15 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ~~~
 
-## Run Project
+## Setup Docker Project
+### Run Services
 ~~~
 docker-compose up
+~~~
+
+### Access Project
+~~~
+0.0.0.0:7860
 ~~~
 
 ## Check Logs
